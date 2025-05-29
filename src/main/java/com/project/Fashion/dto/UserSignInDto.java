@@ -7,4 +7,5 @@ import lombok.Getter;
 public class UserSignInDto {
     public String email;
     public String password;
+    public String role;
 }
