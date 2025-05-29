@@ -1,83 +1,66 @@
 package com.project.Fashion.controller;
 
-import com.project.Fashion.config.mappers.ProductMapper;
-import com.project.Fashion.dto.ProductDto;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.service.ProductService;
-import lombok.AllArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.core.io.Resource;
-
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
+import static org.springframework.http.MediaType.*;
 
 @RestController
-@RequestMapping("/products")
-@AllArgsConstructor
+@RequestMapping("/api/products")
 public class ProductController {
 
     private final ProductService productService;
-    private final ProductMapper productMapper;
 
+    private static final String PHOTO_DIRECTORY = System.getProperty("user.dir") + "/uploads/";
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ProductDto> addProduct(
-            @RequestPart("product") ProductDto productDto,
-            @RequestPart("file") MultipartFile file) throws IOException {
-
-        ProductDto savedProduct = productService.addProduct(productDto, file);
-        return ResponseEntity.ok(savedProduct);
+    public ProductController(ProductService productService) {
+        this.productService = productService;
     }
 
-    @GetMapping(path = "/images/{filename}", produces = {MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE})
-    public ResponseEntity<Resource> getImage(@PathVariable String filename) throws IOException {
-        Resource file = productService.loadImage(filename);
-        return ResponseEntity.ok()
-                .contentType(MediaType.IMAGE_JPEG) // or determine dynamically
-                .body(file);
+    @PostMapping
+    public ResponseEntity<Product> createProduct(@RequestBody Product product) {
+        Product saved = productService.createProduct(product);
+        return ResponseEntity.ok(saved);
     }
 
-    // Get All Products
     @GetMapping
-    public ResponseEntity<List<ProductDto>> getProducts() {
-        List<Product> products = productService.getAllProducts();
-        List<ProductDto> productDtos = products.stream()
-                .map(productMapper::toDto)
-                .toList();
-        return ResponseEntity.ok(productDtos);
+    public ResponseEntity<Page<Product>> getProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(productService.getAllProducts(page, size));
     }
 
-    // Get One Product
     @GetMapping("/{id}")
-    public ResponseEntity<ProductDto> getProduct(@PathVariable Long id) {
-        Product product = productService.getProduct(id);
-        return ResponseEntity.ok(productMapper.toDto(product));
+    public ResponseEntity<Product> getProduct(@PathVariable Long id) {
+        return ResponseEntity.ok(productService.getProduct(id));
     }
 
-    // Update Product
-    @PutMapping("/{id}")
-    public ResponseEntity<ProductDto> updateProduct(@PathVariable Long id, @RequestBody ProductDto productDto) {
-        Product updatedProduct = productService.updateProduct(id, productMapper.toEntity(productDto));
-        return ResponseEntity.ok(productMapper.toDto(updatedProduct));
-    }
-
-    // Patch Product (partial update)
-    @PatchMapping("/{id}")
-    public ResponseEntity<ProductDto> patchProduct(@PathVariable Long id, @RequestBody Map<String, Object> updates) {
-        Product patchedProduct = productService.patchProduct(id, updates);
-        return ResponseEntity.ok(productMapper.toDto(patchedProduct));
-    }
-
-    // Delete Product
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
         productService.deleteProduct(id);
         return ResponseEntity.noContent().build();
     }
-}
 
+    @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Product> uploadImage(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        Product updatedProduct = productService.addImageToProduct(id, file);
+        return ResponseEntity.ok(updatedProduct);
+    }
+
+
+    @GetMapping(path = "/image/{filename}", produces = {IMAGE_PNG_VALUE, IMAGE_JPEG_VALUE})
+    public byte[] getImage(@PathVariable("filename") String filename) throws IOException {
+        return Files.readAllBytes(Paths.get(PHOTO_DIRECTORY + filename));
+    }
+}

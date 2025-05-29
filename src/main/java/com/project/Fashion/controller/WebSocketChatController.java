@@ -12,21 +12,17 @@ import java.time.LocalDateTime;
 @Controller
 public class WebSocketChatController {
 
-    @Autowired
-    private ChatService chatService;
+    @Autowired private ChatService chatService;
 
-    @MessageMapping("/chat.sendMessage") // mapped to /app/chat.sendMessage
+    @MessageMapping("/chat.sendMessage") // from client: /app/chat.sendMessage
     @SendTo("/topic/messages")
-    public ChatMessageDto sendMessage(ChatMessageDto messageDTO) {
-        // Save the message
+    public ChatMessageDto handleMessage(ChatMessageDto chatMessageDto) {
         chatService.sendMessage(
-                messageDTO.getConversationId(),
-                messageDTO.getSenderId(),
-                messageDTO.getContent()
+                chatMessageDto.getConversationId(),
+                chatMessageDto.getSenderId(),
+                chatMessageDto.getContent()
         );
-
-        messageDTO.setTimestamp(LocalDateTime.now().toString());
-        return messageDTO;
+        chatMessageDto.setTimestamp(LocalDateTime.now().toString());
+        return chatMessageDto;
     }
 }
-

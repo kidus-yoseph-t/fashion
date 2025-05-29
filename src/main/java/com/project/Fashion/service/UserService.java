@@ -27,13 +27,6 @@ public class UserService {
         return userMapper.toDto(user);
     }
 
-//    public String login(UserSigninDTO dto) {
-//        User user = userRepository.findByEmail(dto.email).orElseThrow(() -> new RuntimeException("Invalid email"));
-//        if (!passwordEncoder.matches(dto.password, user.getPassword())) {
-//            throw new RuntimeException("Invalid password");
-//        }
-//        return jwtUtil.generateToken(user);
-//    }
     public UserDto login(UserSignInDto dto) {
         User user = userRepository.findByEmail(dto.email)
                 .orElseThrow(() -> new RuntimeException("Invalid email"));

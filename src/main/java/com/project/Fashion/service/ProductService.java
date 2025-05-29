@@ -1,123 +1,120 @@
 package com.project.Fashion.service;
 
-import com.project.Fashion.config.mappers.ProductMapper;
-import com.project.Fashion.dto.ProductDto;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.model.User;
 import com.project.Fashion.repository.ProductRepository;
 import com.project.Fashion.repository.UserRepository;
-import lombok.AllArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
+import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.Optional;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 @Service
-@AllArgsConstructor
-public class ProductService{
+@Slf4j
+@Transactional(rollbackOn = Exception.class)
+public class ProductService {
 
     private final ProductRepository productRepository;
-    private final ProductMapper productMapper;
+    private final UserRepository userRepository;
 
-    private final Path root = Paths.get("uploads");
+    private static final String UPLOAD_DIR = "src/main/resources/static/uploads/products";
 
-    public ProductDto addProduct(ProductDto productDto, MultipartFile file) throws IOException {
-        if (!Files.exists(root)) {
-            Files.createDirectories(root);
-        }
-
-        // Save file with unique name
-        String filename = UUID.randomUUID() + "-" + file.getOriginalFilename();
-        Files.copy(file.getInputStream(), root.resolve(filename), StandardCopyOption.REPLACE_EXISTING);
-
-        // Map DTO and set photoUrl to access URL path
-        Product product = productMapper.toEntity(productDto);
-        product.setPhotoUrl("/products/images/" + filename);
-
-        Product savedProduct = productRepository.save(product);
-        return productMapper.toDto(savedProduct);
+    public ProductService(ProductRepository productRepository, UserRepository userRepository) {
+        this.productRepository = productRepository;
+        this.userRepository = userRepository;
     }
 
-    public Resource loadImage(String filename) throws IOException {
-        Path file = root.resolve(filename);
-        if (!Files.exists(file)) {
-            throw new IOException("File not found " + filename);
-        }
-        return new UrlResource(file.toUri());
-    }
-
-    public List<Product> getAllProducts() {
-        return productRepository.findAll();
+    public Page<Product> getAllProducts(int page, int size) {
+        return productRepository.findAll(PageRequest.of(page, size, Sort.by("name")));
     }
 
     public Product getProduct(Long id) {
         return productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found with ID: " + id));
+                .orElseThrow(() -> new RuntimeException("Product not found"));
     }
 
-    public Product updateProduct(Long id, Product newProductData) {
-        Product existingProduct = getProduct(id);
-
-        existingProduct.setName(newProductData.getName());
-        existingProduct.setDescription(newProductData.getDescription());
-        existingProduct.setPrice(newProductData.getPrice());
-        existingProduct.setCategory(newProductData.getCategory());
-        existingProduct.setPhotoUrl(newProductData.getPhotoUrl());
-        existingProduct.setAverageRating(newProductData.getAverageRating());
-        existingProduct.setNumOfReviews(newProductData.getNumOfReviews());
-        if (newProductData.getSeller() != null && newProductData.getSeller().getId() != null) {
-            User seller = userRepository.findById(newProductData.getSeller().getId())
-                    .orElseThrow(() -> new RuntimeException("Seller not found"));
-            existingProduct.setSeller(seller);
-        }
-
-        return productRepository.save(existingProduct);
-    }
-
-    @Autowired
-    private UserRepository userRepository;
-
-    public Product patchProduct(Long id, Map<String, Object> updates) {
-        Product product = getProduct(id);
-
-        updates.forEach((key, value) -> {
-            switch (key) {
-                case "name" -> product.setName((String) value);
-                case "description" -> product.setDescription((String) value);
-                case "price" -> product.setPrice(Float.parseFloat(value.toString()));
-                case "category" -> product.setCategory((String) value);
-                case "photoUrl" -> product.setPhotoUrl((String) value);
-                case "sellerId" -> {
-                    String sellerId = value.toString();
-                    User seller = userRepository.findById(sellerId)
-                            .orElseThrow(() -> new IllegalArgumentException("Seller not found with ID: " + sellerId));
-                    product.setSeller(seller);
-                }
-                case "averageRating" -> product.setAverageRating(Float.parseFloat(value.toString()));
-                case "numOfReviews" -> product.setNumOfReviews(Integer.parseInt(value.toString()));
-                default -> throw new IllegalArgumentException("Invalid field: " + key);
-            }
-        });
-
+    public Product createProduct(Product product) {
+        String sellerId = product.getSeller().getId();
+        User seller = userRepository.findById(sellerId)
+                .orElseThrow(() -> new RuntimeException("Seller not found"));
+        product.setSeller(seller);
         return productRepository.save(product);
     }
 
-
     public void deleteProduct(Long id) {
-        if (!productRepository.existsById(id)) {
-            throw new RuntimeException("Product not found with ID: " + id);
-        }
         productRepository.deleteById(id);
     }
-}
 
+    public String uploadImage(Long productId, MultipartFile file) {
+        Product product = getProduct(productId);
+        String photoUrl = photoFunction.apply(productId.toString(), file);
+        product.setPhotoUrl(photoUrl);
+        productRepository.save(product);
+        return photoUrl;
+    }
+
+    private final Function<String, String> fileExtension = filename -> Optional.of(filename)
+            .filter(name -> name.contains("."))
+            .map(name -> "." + name.substring(filename.lastIndexOf(".") + 1))
+            .orElse(".png");
+
+    private final BiFunction<String, MultipartFile, String> photoFunction = (id, image) -> {
+        String filename = "product_" + id + fileExtension.apply(image.getOriginalFilename());
+        try {
+            Path fileStorageLocation = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+            if (!Files.exists(fileStorageLocation)) {
+                Files.createDirectories(fileStorageLocation);
+            }
+            Files.copy(image.getInputStream(), fileStorageLocation.resolve(filename), REPLACE_EXISTING);
+            return ServletUriComponentsBuilder
+                    .fromCurrentContextPath()
+                    .path("/products/image/" + filename).toUriString();
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to save image", e);
+        }
+    };
+
+    public Product addImageToProduct(Long productId, MultipartFile file) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        try {
+            // Create uploads directory if it doesn't exist
+            Path uploadPath = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+            if (!Files.exists(uploadPath)) {
+                Files.createDirectories(uploadPath);
+            }
+
+            // Generate a unique filename
+            String filename = "product_" + productId + "_" + file.getOriginalFilename();
+            Path filePath = uploadPath.resolve(filename);
+            Files.copy(file.getInputStream(), filePath, REPLACE_EXISTING);
+
+            // Create a URL to access the image
+            String fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("uploads/products/")
+                    .path(filename)
+                    .toUriString();
+
+            product.setPhotoUrl(fileUrl);
+            return productRepository.save(product);
+
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to store file", e);
+        }
+    }
+}
