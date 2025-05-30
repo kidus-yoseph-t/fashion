@@ -1,6 +1,9 @@
 package com.project.Fashion.service;
 
 import com.project.Fashion.dto.ReviewDto;
+import com.project.Fashion.exception.exceptions.ProductNotFoundException;
+import com.project.Fashion.exception.exceptions.ReviewNotFoundException;
+import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.model.Review;
 import com.project.Fashion.model.User;
@@ -46,10 +49,10 @@ public class ReviewService {
 
     public ReviewDto addReview(Long productId, String userId, ReviewDto reviewDto) {
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid product ID"));
+                .orElseThrow(() -> new ProductNotFoundException("Invalid product ID"));
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid user ID"));
+                .orElseThrow(() -> new UserNotFoundException("Invalid user ID"));
 
         Review review = new Review();
         review.setProduct(product);
@@ -64,14 +67,14 @@ public class ReviewService {
 
     public void deleteReview(Long reviewId) {
         if (!reviewRepository.existsById(reviewId)) {
-            throw new IllegalArgumentException("Review not found");
+            throw new ReviewNotFoundException("Review not found");
         }
         reviewRepository.deleteById(reviewId);
     }
 
     public ReviewDto updateReview(Long reviewId, ReviewDto reviewDto) {
         Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new IllegalArgumentException("Review not found"));
+                .orElseThrow(() -> new ReviewNotFoundException("Review not found"));
 
         review.setRating(reviewDto.getRating());
         review.setComment(reviewDto.getComment());

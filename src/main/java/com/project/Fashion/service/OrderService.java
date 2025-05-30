@@ -2,6 +2,7 @@ package com.project.Fashion.service;
 
 import com.project.Fashion.dto.OrderRequestDto;
 import com.project.Fashion.dto.OrderResponseDto;
+import com.project.Fashion.exception.exceptions.*;
 import com.project.Fashion.model.Cart;
 import com.project.Fashion.model.Delivery;
 import com.project.Fashion.model.Order;
@@ -34,13 +35,13 @@ public class OrderService {
     public Order createOrder(Order order) {
         if (order.getProduct() != null && order.getProduct().getId() != null) {
             Product product = productRepository.findById(order.getProduct().getId())
-                    .orElseThrow(() -> new RuntimeException("Product not found"));
+                    .orElseThrow(() -> new ProductNotFoundException("Product not found"));
             order.setProduct(product);
         }
 
         if (order.getUser() != null && order.getUser().getId() != null) {
             User user = userRepository.findById(order.getUser().getId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+                    .orElseThrow(() -> new UserNotFoundException("User not found"));
             order.setUser(user);
         }
 
@@ -49,13 +50,13 @@ public class OrderService {
 
     public Order createOrderFromDto(OrderRequestDto dto) {
         User user = userRepository.findById(dto.getUser())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
 
         Product product = productRepository.findById(dto.getProduct())
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ProductNotFoundException("Product not found"));
 
         Delivery delivery = deliveryRepository.findById(dto.getDelivery())
-                .orElseThrow(() -> new RuntimeException("Delivery not found"));
+                .orElseThrow(() -> new DeliveryNotFoundException("Delivery not found"));
 
         Order order = new Order();
         order.setUser(user);
@@ -76,7 +77,7 @@ public class OrderService {
     // Get a specific order
     public Order getOrder(Long id) {
         return orderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new OrderNotFoundException("Order not found"));
     }
 
     public List<Order> getOrdersByUserId(String userId) {
@@ -109,20 +110,20 @@ public class OrderService {
                 case "date" -> order.setDate(java.sql.Date.valueOf(value.toString()));
                 case "userId" -> {
                     User user = userRepository.findById(value.toString())
-                            .orElseThrow(() -> new RuntimeException("User not found"));
+                            .orElseThrow(() -> new UserNotFoundException("User not found"));
                     order.setUser(user);
                 }
                 case "productId" -> {
                     Product product = productRepository.findById(Long.parseLong(value.toString()))
-                            .orElseThrow(() -> new RuntimeException("Product not found"));
+                            .orElseThrow(() -> new ProductNotFoundException("Product not found"));
                     order.setProduct(product);
                 }
                 case "deliveryId" -> {
                     Delivery delivery = deliveryRepository.findById(Long.parseLong(value.toString()))
-                            .orElseThrow(() -> new RuntimeException("Delivery not found"));
+                            .orElseThrow(() -> new DeliveryNotFoundException("Delivery not found"));
                     order.setDelivery(delivery);
                 }
-                default -> throw new IllegalArgumentException("Invalid field: " + key);
+                default -> throw new InvalidFieldException("Invalid field: " + key);
             }
         });
 
@@ -132,7 +133,7 @@ public class OrderService {
     // Delete an order
     public void deleteOrder(Long id) {
         if (!orderRepository.existsById(id)) {
-            throw new RuntimeException("Order not found");
+            throw new OrderNotFoundException("Order not found");
         }
         orderRepository.deleteById(id);
     }
@@ -140,15 +141,15 @@ public class OrderService {
     // Checkout: Move cart items to orders for a user
     public List<Order> checkout(String userId, Long deliveryId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
 
         Delivery delivery = deliveryRepository.findById(deliveryId)
-                .orElseThrow(() -> new RuntimeException("Delivery option not found"));
+                .orElseThrow(() -> new DeliveryNotFoundException("Delivery option not found"));
 
         List<Cart> cartItems = cartRepository.findByUserId(userId);
 
         if (cartItems.isEmpty()) {
-            throw new RuntimeException("Cart is empty");
+            throw new CartEmptyException("Cart is empty");
         }
 
         List<Order> orders = new ArrayList<>();

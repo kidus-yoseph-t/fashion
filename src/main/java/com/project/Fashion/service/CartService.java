@@ -2,6 +2,10 @@ package com.project.Fashion.service;
 
 import com.project.Fashion.dto.CartRequestDto;
 import com.project.Fashion.dto.CartResponseDto;
+import com.project.Fashion.exception.exceptions.CartNotFoundException;
+import com.project.Fashion.exception.exceptions.InvalidFieldException;
+import com.project.Fashion.exception.exceptions.ProductNotFoundException;
+import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.model.Cart;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.model.User;
@@ -24,10 +28,10 @@ public class CartService {
 
     public CartResponseDto addCart(CartRequestDto requestDto) {
         User user = userRepository.findById(requestDto.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
 
         Product product = productRepository.findById(requestDto.getProductId())
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ProductNotFoundException("Product not found"));
 
         Cart cart = new Cart();
         cart.setUser(user);
@@ -40,7 +44,7 @@ public class CartService {
     public Cart getCart(String id) {
         Long cartId = Long.parseLong(id);
         return cartRepository.findById(cartId)
-                .orElseThrow(() -> new RuntimeException("Cart not found with id: " + id));
+                .orElseThrow(() -> new CartNotFoundException("Cart not found with id: " + id));
     }
 
     public Cart updateCart(String id, Cart updatedCart) {
@@ -59,7 +63,7 @@ public class CartService {
         updates.forEach((key, value) -> {
             switch (key) {
                 case "quantity" -> cart.setQuantity(Integer.parseInt(value.toString()));
-                default -> throw new IllegalArgumentException("Invalid field: " + key);
+                default -> throw new InvalidFieldException("Invalid field: " + key);
             }
         });
 
@@ -69,7 +73,7 @@ public class CartService {
     public void deleteCart(String id) {
         Long cartId = Long.parseLong(id);
         if (!cartRepository.existsById(cartId)) {
-            throw new RuntimeException("Cart not found with id: " + id);
+            throw new CartNotFoundException("Cart not found with id: " + id);
         }
         cartRepository.deleteById(cartId);
     }

@@ -2,6 +2,9 @@ package com.project.Fashion.service;
 
 import com.project.Fashion.dto.ConversationDto;
 import com.project.Fashion.dto.MessageDto;
+import com.project.Fashion.exception.exceptions.ConversationNotFoundException;
+import com.project.Fashion.exception.exceptions.MessageSendException;
+import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.model.Conversation;
 import com.project.Fashion.model.Message;
 import com.project.Fashion.model.User;
@@ -24,9 +27,9 @@ public class ChatService {
         return conversationRepository.findByUsers(user1Id, user2Id)
                 .orElseGet(() -> {
                     User user1 = userRepository.findById(user1Id)
-                            .orElseThrow(() -> new IllegalArgumentException("User1 not found"));
+                            .orElseThrow(() -> new UserNotFoundException("User1 not found"));
                     User user2 = userRepository.findById(user2Id)
-                            .orElseThrow(() -> new IllegalArgumentException("User2 not found"));
+                            .orElseThrow(() -> new UserNotFoundException("User2 not found"));
                     Conversation conversation = new Conversation();
                     conversation.setUser1(user1);
                     conversation.setUser2(user2);
@@ -36,9 +39,9 @@ public class ChatService {
 
     public Message sendMessage(Long conversationId, String senderId, String encryptedContent) {
         Conversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new IllegalArgumentException("Conversation not found"));
+                .orElseThrow(() -> new ConversationNotFoundException("Conversation not found"));
         User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> new IllegalArgumentException("Sender not found"));
+                .orElseThrow(() -> new MessageSendException("Sender not found"));
 
         Message message = new Message();
         message.setConversation(conversation);

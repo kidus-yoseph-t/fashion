@@ -2,6 +2,8 @@ package com.project.Fashion.service;
 
 import com.project.Fashion.dto.ProductDto;
 import com.project.Fashion.config.mappers.ProductMapper;
+import com.project.Fashion.exception.exceptions.ProductNotFoundException;
+import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.model.User;
 import com.project.Fashion.repository.ProductRepository;
@@ -95,16 +97,16 @@ public class ProductService {
 
     public ProductDto getProductById(Long id) {
         Product product = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+                .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
         return productMapper.toDto(product);
     }
 
     public ProductDto createProduct(ProductDto productDto) {
         if (productDto.getSellerId() == null) {
-            throw new RuntimeException("Seller ID cannot be null when creating a product.");
+            throw new UserNotFoundException("Seller ID cannot be null when creating a product.");
         }
         User seller = userRepository.findById(productDto.getSellerId())
-                .orElseThrow(() -> new RuntimeException("Seller not found with id: " + productDto.getSellerId()));
+                .orElseThrow(() -> new UserNotFoundException("Seller not found with id: " + productDto.getSellerId()));
 
         Product product = productMapper.toEntity(productDto);
         product.setSeller(seller);
@@ -117,7 +119,7 @@ public class ProductService {
 
     public ProductDto updateProduct(Long id, ProductDto productDto) {
         Product existingProduct = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+                .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
 
         if (StringUtils.hasText(productDto.getName())) {
             existingProduct.setName(productDto.getName());
@@ -140,14 +142,14 @@ public class ProductService {
 
     public void deleteProduct(Long id) {
         if (!productRepository.existsById(id)) {
-            throw new RuntimeException("Product not found with id: " + id);
+            throw new ProductNotFoundException("Product not found with id: " + id);
         }
         productRepository.deleteById(id);
     }
 
     public ProductDto addImageToProduct(Long productId, MultipartFile file) {
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found with id: " + productId));
+                .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + productId));
 
         try {
             Path uploadPath = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
