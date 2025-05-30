@@ -108,8 +108,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
                         // 1. PUBLIC ENDPOINTS (always allow)
-                        .requestMatchers("/users/register", "/users/login").permitAll()
-                        .requestMatchers("/logout").permitAll() // Ensure logout is also public
+                        .requestMatchers("/api/users/register", "/api/users/login").permitAll()
+                        .requestMatchers("/api/logout").permitAll() // Ensure logout is also public
 
                         // 2. ADMIN ACCESS (highest privilege, placed early)
                         // If you want ADMIN to access EVERYTHING that is not 'permitAll()':
