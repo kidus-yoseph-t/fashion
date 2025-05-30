@@ -34,3 +34,4 @@ build/
 
 # Environment & config
 .env
+application.properties
