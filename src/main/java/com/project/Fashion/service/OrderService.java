@@ -1,5 +1,7 @@
 package com.project.Fashion.service;
 
+import com.project.Fashion.dto.OrderRequestDto;
+import com.project.Fashion.dto.OrderResponseDto;
 import com.project.Fashion.model.Cart;
 import com.project.Fashion.model.Delivery;
 import com.project.Fashion.model.Order;
@@ -45,6 +47,27 @@ public class OrderService {
         return orderRepository.save(order);
     }
 
+    public Order createOrderFromDto(OrderRequestDto dto) {
+        User user = userRepository.findById(dto.getUser())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Product product = productRepository.findById(dto.getProduct())
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        Delivery delivery = deliveryRepository.findById(dto.getDelivery())
+                .orElseThrow(() -> new RuntimeException("Delivery not found"));
+
+        Order order = new Order();
+        order.setUser(user);
+        order.setProduct(product);
+        order.setDate(dto.getDate());
+        order.setQuantity(dto.getQuantity());
+        order.setTotal(dto.getTotal());
+        order.setDelivery(delivery);
+
+        return orderRepository.save(order);
+    }
+
     // Get all orders
     public List<Order> getAllOrders() {
         return orderRepository.findAll();
@@ -55,6 +78,11 @@ public class OrderService {
         return orderRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
     }
+
+    public List<Order> getOrdersByUserId(String userId) {
+        return orderRepository.findByUserId(userId);
+    }
+
 
     // Update a full order
     public Order updateOrder(Long id, Order updatedOrder) {
@@ -138,4 +166,21 @@ public class OrderService {
         cartRepository.deleteAll(cartItems);
         return orders;
     }
+    public OrderResponseDto convertToDto(Order order) {
+        OrderResponseDto dto = new OrderResponseDto();
+        dto.setId(order.getId());
+        dto.setUserId(order.getUser().getId());
+        dto.setProductId(order.getProduct().getId());
+        dto.setProductName(order.getProduct().getName());
+        dto.setDate(order.getDate());
+        dto.setQuantity(order.getQuantity());
+        dto.setTotal(order.getTotal());
+        dto.setDeliveryId(order.getDelivery().getId());
+        dto.setDeliveryMethod(order.getDelivery().getType());
+        return dto;
+    }
+
+
+
+
 }

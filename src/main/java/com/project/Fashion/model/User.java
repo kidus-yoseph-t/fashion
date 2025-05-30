@@ -1,5 +1,6 @@
 package com.project.Fashion.model;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.UuidGenerator;
@@ -33,6 +34,7 @@ public class User {
     private String role;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    @JsonManagedReference
     private List<Order> orders;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
@@ -46,5 +48,6 @@ public class User {
 
     @OneToMany(mappedBy = "user2")
     private List<Conversation> conversationsReceived;
+
 }
 

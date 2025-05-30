@@ -1,5 +1,7 @@
 package com.project.Fashion.service;
 
+import com.project.Fashion.dto.ConversationDto;
+import com.project.Fashion.dto.MessageDto;
 import com.project.Fashion.model.Conversation;
 import com.project.Fashion.model.Message;
 import com.project.Fashion.model.User;
@@ -45,21 +47,43 @@ public class ChatService {
 
         return messageRepository.save(message);
     }
-
-    public List<Message> getMessages(Long conversationId) {
-        return messageRepository.findByConversationIdOrderBySentAtAsc(conversationId);
+    private ConversationDto toDto(Conversation conversation) {
+        ConversationDto dto = new ConversationDto();
+        dto.setId(conversation.getId());
+        dto.setUser1Id(conversation.getUser1().getId());
+        dto.setUser2Id(conversation.getUser2().getId());
+        dto.setStartedAt(conversation.getStartedAt());
+        return dto;
     }
 
-    public List<Conversation> getUserConversations(String userId) {
-        return conversationRepository.findAllByUserId(userId);
+    private MessageDto toDto(Message message) {
+        MessageDto dto = new MessageDto();
+        dto.setId(message.getId());
+        dto.setConversationId(message.getConversation().getId());
+        dto.setSenderId(message.getSender().getId());
+        dto.setEncryptedContent(message.getEncryptedContent());
+        dto.setSentAt(message.getSentAt());
+        dto.setRead(message.isRead());
+        return dto;
     }
 
-    public List<Message> getUnreadMessages(Long conversationId, String userId) {
-        return messageRepository.findUnreadMessagesForUser(conversationId, userId);
+    public List<MessageDto> getMessages(Long conversationId) {
+        return messageRepository.findByConversationIdOrderBySentAtAsc(conversationId)
+                .stream().map(this::toDto).toList();
+    }
+
+    public List<ConversationDto> getUserConversations(String userId) {
+        return conversationRepository.findAllByUserId(userId)
+                .stream().map(this::toDto).toList();
+    }
+
+    public List<MessageDto> getUnreadMessages(Long conversationId, String userId) {
+        return messageRepository.findUnreadMessagesForUser(conversationId, userId)
+                .stream().map(this::toDto).toList();
     }
 
     public void markMessagesAsRead(Long conversationId, String userId) {
-        List<Message> unreadMessages = getUnreadMessages(conversationId, userId);
+        List<Message> unreadMessages = messageRepository.findUnreadMessagesForUser(conversationId, userId);
         unreadMessages.forEach(msg -> msg.setRead(true));
         messageRepository.saveAll(unreadMessages);
     }

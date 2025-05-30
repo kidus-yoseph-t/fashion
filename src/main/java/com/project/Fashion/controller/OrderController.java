@@ -1,5 +1,8 @@
 package com.project.Fashion.controller;
 
+import com.project.Fashion.dto.CheckOutRequestDto;
+import com.project.Fashion.dto.OrderRequestDto;
+import com.project.Fashion.dto.OrderResponseDto;
 import com.project.Fashion.model.Order;
 import com.project.Fashion.service.OrderService;
 import lombok.AllArgsConstructor;
@@ -18,9 +21,14 @@ public class OrderController {
 
     // Create a new order
     @PostMapping
-    public ResponseEntity<Order> createOrder(@RequestBody Order order) {
-        return ResponseEntity.ok(orderService.createOrder(order));
+    public ResponseEntity<OrderResponseDto> createOrder(@RequestBody OrderRequestDto request) {
+        Order order = orderService.createOrderFromDto(request);
+        OrderResponseDto responseDto = orderService.convertToDto(order);
+        return ResponseEntity.ok(responseDto);
     }
+
+
+
 
     // Get all orders
     @GetMapping
@@ -33,6 +41,13 @@ public class OrderController {
     public ResponseEntity<Order> getOrder(@PathVariable Long id) {
         return ResponseEntity.ok(orderService.getOrder(id));
     }
+
+    // Get all orders for a specific user
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<List<Order>> getOrdersByUserId(@PathVariable String userId) {
+        return ResponseEntity.ok(orderService.getOrdersByUserId(userId));
+    }
+
 
     // Update an order fully
     @PutMapping("/{id}")
@@ -55,7 +70,8 @@ public class OrderController {
 
     // Checkout: move cart items to orders
     @PostMapping("/checkout")
-    public ResponseEntity<List<Order>> checkout(@RequestParam String userId, @RequestParam Long deliveryId) {
-        return ResponseEntity.ok(orderService.checkout(userId, deliveryId));
+    public ResponseEntity<List<Order>> checkout(@RequestBody CheckOutRequestDto request) {
+        return ResponseEntity.ok(orderService.checkout(request.getUserId(), request.getDeliveryId()));
     }
+
 }

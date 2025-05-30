@@ -1,31 +1,48 @@
 package com.project.Fashion.service;
 
+import com.project.Fashion.dto.CartRequestDto;
+import com.project.Fashion.dto.CartResponseDto;
 import com.project.Fashion.model.Cart;
+import com.project.Fashion.model.Product;
+import com.project.Fashion.model.User;
 import com.project.Fashion.repository.CartRepository;
+import com.project.Fashion.repository.ProductRepository;
+import com.project.Fashion.repository.UserRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @AllArgsConstructor
 public class CartService {
     private final CartRepository cartRepository;
+    private final UserRepository userRepository;
+    private final ProductRepository productRepository;
 
-    // Create a new cart item
-    public Cart addCart(Cart cart) {
-        return cartRepository.save(cart);
+    public CartResponseDto addCart(CartRequestDto requestDto) {
+        User user = userRepository.findById(requestDto.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Product product = productRepository.findById(requestDto.getProductId())
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        Cart cart = new Cart();
+        cart.setUser(user);
+        cart.setProduct(product);
+        cart.setQuantity(requestDto.getQuantity());
+
+        return convertToDTO(cartRepository.save(cart));
     }
 
-    // Retrieve a cart by ID
     public Cart getCart(String id) {
         Long cartId = Long.parseLong(id);
         return cartRepository.findById(cartId)
                 .orElseThrow(() -> new RuntimeException("Cart not found with id: " + id));
     }
 
-    // Update a cart entirely
     public Cart updateCart(String id, Cart updatedCart) {
         Long cartId = Long.parseLong(id);
         Cart existingCart = getCart(id);
@@ -36,15 +53,12 @@ public class CartService {
         return cartRepository.save(existingCart);
     }
 
-    // Patch specific fields of the cart
     public Cart patchCart(String id, Map<String, Object> updates) {
-        Long cartId = Long.parseLong(id);
         Cart cart = getCart(id);
 
         updates.forEach((key, value) -> {
             switch (key) {
                 case "quantity" -> cart.setQuantity(Integer.parseInt(value.toString()));
-                // Add more fields if needed
                 default -> throw new IllegalArgumentException("Invalid field: " + key);
             }
         });
@@ -52,7 +66,6 @@ public class CartService {
         return cartRepository.save(cart);
     }
 
-    // Delete a cart by ID
     public void deleteCart(String id) {
         Long cartId = Long.parseLong(id);
         if (!cartRepository.existsById(cartId)) {
@@ -61,8 +74,26 @@ public class CartService {
         cartRepository.deleteById(cartId);
     }
 
-    // Optional: retrieve all cart items for a product
-    public List<Cart> getCartsByProductId(Long productId) {
-        return cartRepository.findByProductId(productId);
+    public List<CartResponseDto> getCartDtosByUser(String userId) {
+        return cartRepository.findByUserId(userId)
+                .stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    public CartResponseDto convertToDTO(Cart cart) {
+        CartResponseDto dto = new CartResponseDto();
+        dto.setId(cart.getId());
+        dto.setUserId(cart.getUser().getId());
+
+        dto.setProductId(cart.getProduct().getId());
+        dto.setProductName(cart.getProduct().getName());
+        dto.setCategory(cart.getProduct().getCategory());
+        dto.setPrice(cart.getProduct().getPrice());
+        dto.setPhotoUrl(cart.getProduct().getPhotoUrl());
+
+        dto.setQuantity(cart.getQuantity());
+
+        return dto;
     }
 }
