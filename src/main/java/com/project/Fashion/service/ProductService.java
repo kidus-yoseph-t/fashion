@@ -1,123 +1,179 @@
 package com.project.Fashion.service;
 
-import com.project.Fashion.config.mappers.ProductMapper;
 import com.project.Fashion.dto.ProductDto;
+import com.project.Fashion.config.mappers.ProductMapper;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.model.User;
 import com.project.Fashion.repository.ProductRepository;
 import com.project.Fashion.repository.UserRepository;
-import lombok.AllArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 @Service
-@AllArgsConstructor
-public class ProductService{
+@Slf4j
+@Transactional(rollbackOn = Exception.class)
+@RequiredArgsConstructor
+public class ProductService {
 
     private final ProductRepository productRepository;
+    private final UserRepository userRepository;
     private final ProductMapper productMapper;
 
-    private final Path root = Paths.get("uploads");
+    private static final String UPLOAD_DIR = "src/main/resources/static/uploads/products";
 
-    public ProductDto addProduct(ProductDto productDto, MultipartFile file) throws IOException {
-        if (!Files.exists(root)) {
-            Files.createDirectories(root);
+    public Page<ProductDto> getAllProducts(
+            int page,
+            int size,
+            String category,
+            String searchTerm,
+            Float minPrice,
+            Float maxPrice,
+            Float minRating,
+            String sortBy,
+            String sortDir) {
+
+        Sort.Direction direction = Sort.Direction.ASC;
+        if (sortDir != null && sortDir.equalsIgnoreCase("DESC")) {
+            direction = Sort.Direction.DESC;
         }
 
-        // Save file with unique name
-        String filename = UUID.randomUUID() + "-" + file.getOriginalFilename();
-        Files.copy(file.getInputStream(), root.resolve(filename), StandardCopyOption.REPLACE_EXISTING);
+        String sortProperty = StringUtils.hasText(sortBy) ? sortBy : "name";
+        List<String> validSortProperties = List.of("name", "price", "averageRating", "id");
+        if (!validSortProperties.contains(sortProperty)) {
+            sortProperty = "name";
+        }
 
-        // Map DTO and set photoUrl to access URL path
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortProperty));
+
+        Specification<Product> spec = (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (StringUtils.hasText(category)) {
+                predicates.add(criteriaBuilder.equal(criteriaBuilder.lower(root.get("category")), category.toLowerCase()));
+            }
+            if (StringUtils.hasText(searchTerm)) {
+                Predicate namePredicate = criteriaBuilder.like(criteriaBuilder.lower(root.get("name")), "%" + searchTerm.toLowerCase() + "%");
+                Predicate descriptionPredicate = criteriaBuilder.like(criteriaBuilder.lower(root.get("description")), "%" + searchTerm.toLowerCase() + "%");
+                predicates.add(criteriaBuilder.or(namePredicate, descriptionPredicate));
+            }
+            if (minPrice != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("price"), minPrice));
+            }
+            if (maxPrice != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("price"), maxPrice));
+            }
+            if (minRating != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("averageRating"), minRating));
+            }
+
+            return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Page<Product> productPage = productRepository.findAll(spec, pageable);
+        return productPage.map(productMapper::toDto);
+    }
+
+    public ProductDto getProductById(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+        return productMapper.toDto(product);
+    }
+
+    public ProductDto createProduct(ProductDto productDto) {
+        if (productDto.getSellerId() == null) {
+            throw new RuntimeException("Seller ID cannot be null when creating a product.");
+        }
+        User seller = userRepository.findById(productDto.getSellerId())
+                .orElseThrow(() -> new RuntimeException("Seller not found with id: " + productDto.getSellerId()));
+
         Product product = productMapper.toEntity(productDto);
-        product.setPhotoUrl("/products/images/" + filename);
+        product.setSeller(seller);
+        product.setAverageRating(0.0f);
+        product.setNumOfReviews(0);
 
         Product savedProduct = productRepository.save(product);
         return productMapper.toDto(savedProduct);
     }
 
-    public Resource loadImage(String filename) throws IOException {
-        Path file = root.resolve(filename);
-        if (!Files.exists(file)) {
-            throw new IOException("File not found " + filename);
+    public ProductDto updateProduct(Long id, ProductDto productDto) {
+        Product existingProduct = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+
+        if (StringUtils.hasText(productDto.getName())) {
+            existingProduct.setName(productDto.getName());
         }
-        return new UrlResource(file.toUri());
-    }
-
-    public List<Product> getAllProducts() {
-        return productRepository.findAll();
-    }
-
-    public Product getProduct(Long id) {
-        return productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found with ID: " + id));
-    }
-
-    public Product updateProduct(Long id, Product newProductData) {
-        Product existingProduct = getProduct(id);
-
-        existingProduct.setName(newProductData.getName());
-        existingProduct.setDescription(newProductData.getDescription());
-        existingProduct.setPrice(newProductData.getPrice());
-        existingProduct.setCategory(newProductData.getCategory());
-        existingProduct.setPhotoUrl(newProductData.getPhotoUrl());
-        existingProduct.setAverageRating(newProductData.getAverageRating());
-        existingProduct.setNumOfReviews(newProductData.getNumOfReviews());
-        if (newProductData.getSeller() != null && newProductData.getSeller().getId() != null) {
-            User seller = userRepository.findById(newProductData.getSeller().getId())
-                    .orElseThrow(() -> new RuntimeException("Seller not found"));
-            existingProduct.setSeller(seller);
+        if (StringUtils.hasText(productDto.getDescription())) {
+            existingProduct.setDescription(productDto.getDescription());
+        }
+        if (productDto.getPrice() >= 0) {
+            existingProduct.setPrice(productDto.getPrice());
+        } else {
+            throw new IllegalArgumentException("Price cannot be negative.");
+        }
+        if (StringUtils.hasText(productDto.getCategory())) {
+            existingProduct.setCategory(productDto.getCategory());
         }
 
-        return productRepository.save(existingProduct);
+        Product updatedProduct = productRepository.save(existingProduct);
+        return productMapper.toDto(updatedProduct);
     }
-
-    @Autowired
-    private UserRepository userRepository;
-
-    public Product patchProduct(Long id, Map<String, Object> updates) {
-        Product product = getProduct(id);
-
-        updates.forEach((key, value) -> {
-            switch (key) {
-                case "name" -> product.setName((String) value);
-                case "description" -> product.setDescription((String) value);
-                case "price" -> product.setPrice(Float.parseFloat(value.toString()));
-                case "category" -> product.setCategory((String) value);
-                case "photoUrl" -> product.setPhotoUrl((String) value);
-                case "sellerId" -> {
-                    String sellerId = value.toString();
-                    User seller = userRepository.findById(sellerId)
-                            .orElseThrow(() -> new IllegalArgumentException("Seller not found with ID: " + sellerId));
-                    product.setSeller(seller);
-                }
-                case "averageRating" -> product.setAverageRating(Float.parseFloat(value.toString()));
-                case "numOfReviews" -> product.setNumOfReviews(Integer.parseInt(value.toString()));
-                default -> throw new IllegalArgumentException("Invalid field: " + key);
-            }
-        });
-
-        return productRepository.save(product);
-    }
-
 
     public void deleteProduct(Long id) {
         if (!productRepository.existsById(id)) {
-            throw new RuntimeException("Product not found with ID: " + id);
+            throw new RuntimeException("Product not found with id: " + id);
         }
         productRepository.deleteById(id);
     }
-}
 
+    public ProductDto addImageToProduct(Long productId, MultipartFile file) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + productId));
+
+        try {
+            Path uploadPath = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+            if (!Files.exists(uploadPath)) {
+                Files.createDirectories(uploadPath);
+            }
+
+            String originalFilename = file.getOriginalFilename();
+            String filename = "product_" + productId + "_" + (StringUtils.hasText(originalFilename) ? originalFilename.replaceAll("\\s+", "_") : "image.png");
+            Path filePath = uploadPath.resolve(filename);
+            Files.copy(file.getInputStream(), filePath, REPLACE_EXISTING);
+
+            String fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/api/products/image/")
+                    .path(filename)
+                    .toUriString();
+
+            product.setPhotoUrl(fileUrl);
+            Product savedProduct = productRepository.save(product);
+            return productMapper.toDto(savedProduct);
+
+        } catch (IOException e) {
+            // Log the actual IOException
+            log.error("Failed to store file for product id {}: {}", productId, e.getMessage(), e);
+            // Wrap in a runtime exception for the controller to handle via GlobalExceptionHandler
+            throw new RuntimeException("Failed to store file. " + e.getMessage(), e);
+        }
+    }
+}

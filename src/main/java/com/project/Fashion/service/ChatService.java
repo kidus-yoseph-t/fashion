@@ -14,52 +14,53 @@ import java.util.List;
 @Service
 public class ChatService {
 
-    @Autowired
-    private UserRepository userRepo;
-    @Autowired
-    private ConversationRepository convoRepo;
-    @Autowired
-    private MessageRepository messageRepo;
+    @Autowired private UserRepository userRepository;
+    @Autowired private ConversationRepository conversationRepository;
+    @Autowired private MessageRepository messageRepository;
 
     public Conversation startOrGetConversation(String user1Id, String user2Id) {
-        return convoRepo.findByUsers(user1Id, user2Id)
+        return conversationRepository.findByUsers(user1Id, user2Id)
                 .orElseGet(() -> {
-                    User user1 = userRepo.findById(user1Id).orElseThrow();
-                    User user2 = userRepo.findById(user2Id).orElseThrow();
+                    User user1 = userRepository.findById(user1Id)
+                            .orElseThrow(() -> new IllegalArgumentException("User1 not found"));
+                    User user2 = userRepository.findById(user2Id)
+                            .orElseThrow(() -> new IllegalArgumentException("User2 not found"));
                     Conversation conversation = new Conversation();
                     conversation.setUser1(user1);
                     conversation.setUser2(user2);
-                    return convoRepo.save(conversation);
+                    return conversationRepository.save(conversation);
                 });
     }
 
     public Message sendMessage(Long conversationId, String senderId, String encryptedContent) {
-        Conversation conversation = convoRepo.findById(conversationId).orElseThrow();
-        User sender = userRepo.findById(senderId).orElseThrow();
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("Conversation not found"));
+        User sender = userRepository.findById(senderId)
+                .orElseThrow(() -> new IllegalArgumentException("Sender not found"));
 
         Message message = new Message();
         message.setConversation(conversation);
         message.setSender(sender);
         message.setEncryptedContent(encryptedContent);
-        return messageRepo.save(message);
+
+        return messageRepository.save(message);
     }
 
     public List<Message> getMessages(Long conversationId) {
-        return messageRepo.findByConversationIdOrderBySentAtAsc(conversationId);
+        return messageRepository.findByConversationIdOrderBySentAtAsc(conversationId);
     }
 
     public List<Conversation> getUserConversations(String userId) {
-        return convoRepo.findAllByUserId(userId);
+        return conversationRepository.findAllByUserId(userId);
     }
 
     public List<Message> getUnreadMessages(Long conversationId, String userId) {
-        return messageRepo.findUnreadMessagesForUser(conversationId, userId);
+        return messageRepository.findUnreadMessagesForUser(conversationId, userId);
     }
 
     public void markMessagesAsRead(Long conversationId, String userId) {
-        List<Message> unread = getUnreadMessages(conversationId, userId);
-        unread.forEach(m -> m.setRead(true));
-        messageRepo.saveAll(unread);
+        List<Message> unreadMessages = getUnreadMessages(conversationId, userId);
+        unreadMessages.forEach(msg -> msg.setRead(true));
+        messageRepository.saveAll(unreadMessages);
     }
 }
-

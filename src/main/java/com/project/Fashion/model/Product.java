@@ -30,7 +30,6 @@ public class Product {
     @Column(nullable = false)
     private String category;
 
-    @Column(nullable = false)
     private String photoUrl;
 
     @ManyToOne
