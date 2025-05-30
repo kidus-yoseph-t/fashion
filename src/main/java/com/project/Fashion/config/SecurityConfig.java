@@ -107,31 +107,20 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
-                        // 1. PUBLIC ENDPOINTS (always allow)
-                        .requestMatchers("/users/register", "/users/login").permitAll()
-                        .requestMatchers("/logout").permitAll() // Ensure logout is also public
+                        // 1. PUBLIC ENDPOINTS (always allow) - UPDATED PATHS HERE!
+                        .requestMatchers("/api/users/register", "/api/users/login").permitAll() // <-- CHANGED
+                        .requestMatchers("/logout").permitAll()
 
                         // 2. ADMIN ACCESS (highest privilege, placed early)
-                        // If you want ADMIN to access EVERYTHING that is not 'permitAll()':
-                        .requestMatchers("/**").hasRole("ADMIN") // ADMIN can access ANY path (except /users/register, /users/login, /logout)
+                        .requestMatchers("/**").hasRole("ADMIN") // This still works as a catch-all for ADMIN
 
-                        // 3. OTHER SPECIFIC ROLE-BASED ACCESS (these rules will only apply if the user is NOT ADMIN)
+                        // 3. OTHER SPECIFIC ROLE-BASED ACCESS (only apply if NOT ADMIN) - UPDATED PATHS HERE!
                         .requestMatchers("/api/products/**", "/api/categories/**").hasAnyRole("BUYER", "SELLER")
                         .requestMatchers("/api/seller/dashboard/**", "/api/seller/products/**").hasRole("SELLER")
-                        .requestMatchers("/users/**").authenticated() // Any authenticated user (excluding register/login)
+                        .requestMatchers("/api/users/**").authenticated() // <-- CHANGED - Any authenticated user (excluding register/login)
 
-                        // 4. CATCH-ALL for remaining authenticated paths
-                        // This rule is now effectively redundant if '/**'.hasRole("ADMIN") is placed first
-                        // and you want ADMINs to access everything.
-                        // If you want *any* logged-in user (not Admin) to access other unspecified paths,
-                        // this should be placed after the role-specific ones but before 'denyAll()'.
-                        // However, with '/**'.hasRole("ADMIN"), any non-admin reaching here would be denied.
-                        // You might need to adjust based on exact desired hierarchy.
-                        // For a typical setup where ADMIN "sees all" and others have limited views:
-                        // .anyRequest().authenticated() // This would now only apply to non-admin roles
-                        // if they get past previous rules.
-                        // It might be better to explicitly deny if not matched.
-                        .anyRequest().denyAll() // Deny any request not explicitly permitted or assigned a role
+                        // 4. CATCH-ALL for remaining (deny anything not explicitly allowed)
+                        .anyRequest().denyAll()
                 )
                 .formLogin(form -> form.disable())
                 .httpBasic(httpBasic -> httpBasic.disable())
