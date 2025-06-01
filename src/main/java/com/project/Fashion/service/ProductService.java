@@ -12,11 +12,18 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict; // Import CacheEvict
+import org.springframework.cache.annotation.Cacheable;  // Import Cacheable
+import org.springframework.cache.annotation.Caching;    // Import Caching
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,6 +35,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+// import java.util.Optional; // No longer needed directly here
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
@@ -43,6 +51,39 @@ public class ProductService {
 
     private static final String UPLOAD_DIR = "src/main/resources/static/uploads/products";
 
+    // Helper method to get the current authenticated user's ID and role
+    private User getCurrentAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
+            throw new AccessDeniedException("User is not authenticated.");
+        }
+        String email;
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof UserDetails) {
+            email = ((UserDetails) principal).getUsername();
+        } else if (principal instanceof String) {
+            email = (String) principal;
+        } else {
+            throw new AccessDeniedException("Invalid principal type.");
+        }
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("Authenticated user not found in database. Email: " + email));
+    }
+
+    // Helper method to check product ownership for a SELLER
+    private void checkProductOwnership(Product product, User seller) {
+        if (!"SELLER".equalsIgnoreCase(seller.getRole())) {
+            throw new AccessDeniedException("User performing the action is not a SELLER.");
+        }
+        if (product.getSeller() == null || !product.getSeller().getId().equals(seller.getId())) {
+            log.warn("Access Denied: User {} (Role: {}) attempted to modify product {} owned by {}",
+                    seller.getEmail(), seller.getRole(), product.getId(),
+                    product.getSeller() != null ? product.getSeller().getId() : "UNKNOWN_SELLER");
+            throw new AccessDeniedException("Access Denied: You do not own this product.");
+        }
+    }
+
+    @Cacheable(value = "productsList", key = "{#page, #size, #category, #searchTerm, #minPrice, #maxPrice, #minRating, #sortBy, #sortDir}")
     public Page<ProductDto> getAllProducts(
             int page,
             int size,
@@ -53,7 +94,8 @@ public class ProductService {
             Float minRating,
             String sortBy,
             String sortDir) {
-
+        log.info("Fetching products from DB: page={}, size={}, category={}, searchTerm={}, minPrice={}, maxPrice={}, minRating={}, sortBy={}, sortDir={}",
+                page, size, category, searchTerm, minPrice, maxPrice, minRating, sortBy, sortDir);
         Sort.Direction direction = Sort.Direction.ASC;
         if (sortDir != null && sortDir.equalsIgnoreCase("DESC")) {
             direction = Sort.Direction.DESC;
@@ -95,16 +137,27 @@ public class ProductService {
         return productPage.map(productMapper::toDto);
     }
 
+    @Cacheable(value = "products", key = "#id")
     public ProductDto getProductById(Long id) {
+        log.info("Fetching product from DB with id: {}", id);
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
         return productMapper.toDto(product);
     }
 
+    @CacheEvict(value = "productsList", allEntries = true)
     public ProductDto createProduct(ProductDto productDto) {
-        if (productDto.getSellerId() == null) {
-            throw new UserNotFoundException("Seller ID cannot be null when creating a product.");
+        User authenticatedSeller = getCurrentAuthenticatedUser();
+
+        if (!"SELLER".equalsIgnoreCase(authenticatedSeller.getRole())) {
+            throw new AccessDeniedException("Only users with SELLER role can create products.");
         }
+        if (productDto.getSellerId() != null && !productDto.getSellerId().equals(authenticatedSeller.getId())) {
+            log.warn("Seller ID in DTO ({}) does not match authenticated seller ID ({}). Using authenticated seller.",
+                    productDto.getSellerId(), authenticatedSeller.getId());
+        }
+        productDto.setSellerId(authenticatedSeller.getId());
+
         User seller = userRepository.findById(productDto.getSellerId())
                 .orElseThrow(() -> new UserNotFoundException("Seller not found with id: " + productDto.getSellerId()));
 
@@ -114,12 +167,20 @@ public class ProductService {
         product.setNumOfReviews(0);
 
         Product savedProduct = productRepository.save(product);
+        log.info("Product {} created by seller {}. Evicting 'productsList' cache.", savedProduct.getId(), seller.getEmail());
         return productMapper.toDto(savedProduct);
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "products", key = "#id"),
+            @CacheEvict(value = "productsList", allEntries = true)
+    })
     public ProductDto updateProduct(Long id, ProductDto productDto) {
+        User authenticatedUser = getCurrentAuthenticatedUser();
         Product existingProduct = productRepository.findById(id)
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
+
+        checkProductOwnership(existingProduct, authenticatedUser);
 
         if (StringUtils.hasText(productDto.getName())) {
             existingProduct.setName(productDto.getName());
@@ -137,19 +198,45 @@ public class ProductService {
         }
 
         Product updatedProduct = productRepository.save(existingProduct);
+        log.info("Product {} updated by owner {}. Evicting 'products' cache for key {} and 'productsList' cache.", updatedProduct.getId(), authenticatedUser.getEmail(), id);
         return productMapper.toDto(updatedProduct);
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "products", key = "#id"),
+            @CacheEvict(value = "productsList", allEntries = true)
+    })
     public void deleteProduct(Long id) {
-        if (!productRepository.existsById(id)) {
-            throw new ProductNotFoundException("Product not found with id: " + id);
+        User authenticatedUser = getCurrentAuthenticatedUser();
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
+
+        boolean isAdmin = authenticatedUser.getRole().equalsIgnoreCase("ADMIN");
+
+        if (isAdmin) {
+            log.info("Admin {} is deleting product {}", authenticatedUser.getEmail(), id);
+        } else if ("SELLER".equalsIgnoreCase(authenticatedUser.getRole())) {
+            checkProductOwnership(product, authenticatedUser);
+            log.info("Seller {} is deleting their own product {}", authenticatedUser.getEmail(), id);
+        } else {
+            log.warn("Access Denied: User {} (Role: {}) attempted to delete product {} without sufficient privileges.",
+                    authenticatedUser.getEmail(), authenticatedUser.getRole(), id);
+            throw new AccessDeniedException("Access Denied: You do not have permission to delete this product.");
         }
+        log.info("Evicting 'products' cache for key {} and 'productsList' cache due to deletion.", id);
         productRepository.deleteById(id);
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "products", key = "#productId"),
+            @CacheEvict(value = "productsList", allEntries = true)
+    })
     public ProductDto addImageToProduct(Long productId, MultipartFile file) {
+        User authenticatedSeller = getCurrentAuthenticatedUser();
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + productId));
+
+        checkProductOwnership(product, authenticatedSeller);
 
         try {
             Path uploadPath = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
@@ -158,7 +245,8 @@ public class ProductService {
             }
 
             String originalFilename = file.getOriginalFilename();
-            String filename = "product_" + productId + "_" + (StringUtils.hasText(originalFilename) ? originalFilename.replaceAll("\\s+", "_") : "image.png");
+            String filename = "product_" + productId + "_" + System.currentTimeMillis() + "_" +
+                    (StringUtils.hasText(originalFilename) ? StringUtils.cleanPath(originalFilename).replaceAll("\\s+", "_") : "image.png");
             Path filePath = uploadPath.resolve(filename);
             Files.copy(file.getInputStream(), filePath, REPLACE_EXISTING);
 
@@ -169,12 +257,11 @@ public class ProductService {
 
             product.setPhotoUrl(fileUrl);
             Product savedProduct = productRepository.save(product);
+            log.info("Image added to product {} by owner {}. Evicting 'products' cache for key {} and 'productsList' cache.", savedProduct.getId(), authenticatedSeller.getEmail(), productId);
             return productMapper.toDto(savedProduct);
 
         } catch (IOException e) {
-            // Log the actual IOException
             log.error("Failed to store file for product id {}: {}", productId, e.getMessage(), e);
-            // Wrap in a runtime exception for the controller to handle via GlobalExceptionHandler
             throw new RuntimeException("Failed to store file. " + e.getMessage(), e);
         }
     }

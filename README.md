@@ -44,7 +44,7 @@ This project is a backend API for a fashion e-commerce platform, built using **S
 - Spring Boot
 - Spring Data JPA
 - PostgreSQL
-- Spring Security + JWT (planned/in progress)
+- Spring Security + JWT
 - Lombok
 - Maven
 
@@ -63,7 +63,7 @@ This project is a backend API for a fashion e-commerce platform, built using **S
 1. **Clone the repository**:
 
 ```bash
-git clone https://github.com/<your-username>/fashion.git
+git clone https://github.com/https://github.com/kidus-yoseph-t/fashion
 cd fashion
 Configure your database:
 
