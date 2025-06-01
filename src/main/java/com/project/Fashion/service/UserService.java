@@ -17,6 +17,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken; // Import UsernamePasswordAuthenticationToken
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails; // Import UserDetails
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,8 +85,8 @@ public class UserService {
         User existing = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
 
-        existing.setFirstname(dto.getFirstname());
-        existing.setLastname(dto.getLastname());
+        existing.setFirstName(dto.getFirstName());
+        existing.setLastName(dto.getLastName());
 
         // Handle email change carefully, check for duplicates if email is updated
         if (!existing.getEmail().equals(dto.getEmail())) {
@@ -114,10 +115,10 @@ public class UserService {
         updates.forEach((key, value) -> {
             switch (key) {
                 case "firstname":
-                    user.setFirstname((String) value);
+                    user.setFirstName((String) value);
                     break;
                 case "lastname":
-                    user.setLastname((String) value);
+                    user.setLastName((String) value);
                     break;
                 case "email":
                     String newEmail = (String) value;
@@ -142,6 +143,7 @@ public class UserService {
                     break;
                 default:
                     // Log or throw an exception for unknown fields
+
                     break;
             }
         });
@@ -156,5 +158,11 @@ public class UserService {
             throw new UserNotFoundException("User not found with id: " + id);
         }
         userRepository.deleteById(id);
+    }
+
+    public UserDto findUserDtoByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .map(userMapper::toDto)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
     }
 }

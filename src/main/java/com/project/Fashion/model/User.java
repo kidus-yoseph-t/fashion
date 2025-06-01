@@ -18,11 +18,11 @@ public class User {
     @Column(unique = true, updatable = false)
     private String id;
 
-    @Column(nullable = false)
-    private String firstname;
+    @Column(name = "firstName", nullable = false)
+    private String firstName;
 
-    @Column(nullable = false)
-    private String lastname;
+    @Column(name = "lastName", nullable = false)
+    private String lastName;
 
     @Column(nullable = false, unique = true)
     private String email;

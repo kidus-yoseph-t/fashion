@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping(path = "/api/orders")
@@ -32,10 +33,13 @@ public class OrderController {
 
     // Get all orders
     @GetMapping
-    public ResponseEntity<List<Order>> getAllOrders() {
-        return ResponseEntity.ok(orderService.getAllOrders());
+    public ResponseEntity<List<OrderResponseDto>> getAllOrders() { // <--- Changed return type
+        List<Order> orders = orderService.getAllOrders();
+        List<OrderResponseDto> responseDtos = orders.stream()
+                .map(orderService::convertToDto)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(responseDtos);
     }
-
     // Get a specific order by ID
     @GetMapping("/{id}")
     public ResponseEntity<Order> getOrder(@PathVariable Long id) {

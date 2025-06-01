@@ -36,8 +36,12 @@ public class Order {
     @Column(nullable = false)
     private float total;
 
+    // --- ADD THIS STATUS FIELD ---
+    @Enumerated(EnumType.STRING) // Store status as a string in the DB
+    @Column(nullable = false)
+    private OrderStatus status; // You'll need an OrderStatus enum
+
     @ManyToOne
     @JoinColumn(name = "delivery_id", nullable = false)
     private Delivery delivery;
 }
-

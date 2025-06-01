@@ -1,7 +1,5 @@
-package com.project.Fashion.dto;
-
+package com.project.Fashion.dto;// com.project.Fashion.dto.OrderResponseDto
 import lombok.Data;
-
 import java.util.Date;
 
 @Data
@@ -16,4 +14,5 @@ public class OrderResponseDto {
     private Date date;
     private Long deliveryId;
     private String deliveryMethod;
+    private String status; // Add status field
 }
