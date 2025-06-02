@@ -9,10 +9,16 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 
 @Entity
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_order_user_id", columnList = "user_id"),
+        @Index(name = "idx_order_product_id", columnList = "product_id"),
+        @Index(name = "idx_order_delivery_id", columnList = "delivery_id"),
+        @Index(name = "idx_order_date", columnList = "date"),
+        @Index(name = "idx_order_status", columnList = "status")
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "orders")
 public class Order {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

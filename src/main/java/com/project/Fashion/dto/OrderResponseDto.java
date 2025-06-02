@@ -14,5 +14,5 @@ public class OrderResponseDto {
     private Date date;
     private Long deliveryId;
     private String deliveryMethod;
-    private String status; // Add status field
+    private String status;
 }

@@ -8,10 +8,13 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 
 @Entity
+@Table(name = "review", indexes = {
+        @Index(name = "idx_review_product_id", columnList = "product_id"),
+        @Index(name = "idx_review_user_id", columnList = "user_id")
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "review")
 public class Review {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

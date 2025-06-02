@@ -7,10 +7,13 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Table(name = "cart", indexes = {
+        @Index(name = "idx_cart_user_id", columnList = "user_id"),
+        @Index(name = "idx_cart_product_id", columnList = "product_id")
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "cart")
 public class Cart {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

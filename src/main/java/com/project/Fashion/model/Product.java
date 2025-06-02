@@ -10,10 +10,14 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 @Entity
+@Table(name = "product", indexes = {
+        @Index(name = "idx_product_category", columnList = "category"),
+        @Index(name = "idx_product_price", columnList = "price"),
+        @Index(name = "idx_product_seller_id", columnList = "seller_id") // If not automatically created for FK
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "product")
 public class Product {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

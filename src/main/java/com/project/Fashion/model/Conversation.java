@@ -9,10 +9,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
+@Table(name = "conversations", indexes = {
+        @Index(name = "idx_conversation_user1_id", columnList = "user1_id"),
+        @Index(name = "idx_conversation_user2_id", columnList = "user2_id"),
+        // This composite index helps the findByUsers query specifically.
+        @Index(name = "idx_conversation_users_pair", columnList = "user1_id, user2_id")
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "conversations")
 public class Conversation {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

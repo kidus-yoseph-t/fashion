@@ -8,10 +8,13 @@ import org.hibernate.annotations.UuidGenerator;
 import java.util.List;
 
 @Entity
+@Table(name = "users", indexes = {
+        @Index(name = "idx_user_role", columnList = "role")
+        // email is likely already indexed due to unique constraint
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "users")
 public class User {
     @Id
     @UuidGenerator
