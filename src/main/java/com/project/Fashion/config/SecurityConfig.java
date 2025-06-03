@@ -98,6 +98,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/reviews/{reviewId}").hasAnyRole("BUYER", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/reviews/{reviewId}").hasAnyRole("BUYER", "ADMIN")
 
+                        // ===== PAYMENT MANAGEMENT =====
+                        .requestMatchers(HttpMethod.POST, "/api/payments/process").hasAnyRole("BUYER", "ADMIN")
+
                         // ===== CHAT MANAGEMENT =====
                         .requestMatchers("/api/chat/**").authenticated()
 
