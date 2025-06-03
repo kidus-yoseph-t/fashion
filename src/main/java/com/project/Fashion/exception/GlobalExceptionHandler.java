@@ -1,5 +1,9 @@
 package com.project.Fashion.exception;
 
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import java.util.HashMap;
+import java.util.Map;
+import java.time.LocalDateTime;
 import com.project.Fashion.exception.exceptions.*;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -9,10 +13,6 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -142,5 +142,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ReviewNotFoundException.class)
     public ResponseEntity<String> handleReviewNotFound(ReviewNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ResponseEntity<Map<String, Object>> handleRequestNotPermitted(RequestNotPermitted ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now().toString()); // Consistent timestamp format
+        body.put("status", HttpStatus.TOO_MANY_REQUESTS.value());
+        body.put("error", HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase());
+        body.put("message", "Rate limit exceeded. Please try again later.");
+        // Optionally, you can include ex.getMessage() if it provides useful (but not sensitive) info
+        // body.put("details", ex.getMessage());
+
+        // You can also add headers like Retry-After if you want to suggest when to retry
+        // HttpHeaders headers = new HttpHeaders();
+        // headers.add("Retry-After", "60"); // Example: retry after 60 seconds
+        // return new ResponseEntity<>(body, headers, HttpStatus.TOO_MANY_REQUESTS);
+
+        return new ResponseEntity<>(body, HttpStatus.TOO_MANY_REQUESTS);
     }
 }

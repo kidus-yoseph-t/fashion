@@ -1,5 +1,6 @@
 package com.project.Fashion.controller;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import com.project.Fashion.dto.ProductDto;
 import com.project.Fashion.service.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class ProductController {
 
     // Public endpoint (permitAll for GET in SecurityConfig)
     @GetMapping
+    @RateLimiter(name = "defaultApiService")
     public ResponseEntity<Page<ProductDto>> getProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,

@@ -1,5 +1,6 @@
 package com.project.Fashion.controller;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import com.project.Fashion.dto.AuthResponseDto;
 import com.project.Fashion.dto.UserDto;
 import com.project.Fashion.dto.UserSignInDto;
@@ -32,6 +33,7 @@ public class UserController {
 
     // login - Public
     @PostMapping("/login")
+    @RateLimiter(name = "defaultApiService")
     public ResponseEntity<AuthResponseDto> login(@RequestBody UserSignInDto dto) {
         return ResponseEntity.ok(userService.login(dto));
     }
