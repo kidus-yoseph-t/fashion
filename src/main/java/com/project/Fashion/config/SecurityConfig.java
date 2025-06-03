@@ -15,13 +15,13 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler; // Import this
+import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true) // Crucial for @PreAuthorize annotations
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
     @Autowired
@@ -35,7 +35,7 @@ public class SecurityConfig {
     @Bean
     public AuthenticationEntryPoint unauthorizedEntryPoint() {
         return (request, response, authException) -> {
-            response.setContentType("application/json;charset=UTF-8"); // Corrected charset
+            response.setContentType("application/json;charset=UTF-8");
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("{\"timestamp\":\"" + java.time.LocalDateTime.now() + "\","
                     + "\"status\":401,"
@@ -51,15 +51,24 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> {})
                 .authorizeHttpRequests(authorize -> authorize
+
+                        // ===== SWAGGER CONFIGURATION =====
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/swagger-resources/**",
+                                "/webjars/**"
+                        ).permitAll()
+
                         // ===== PUBLIC ENDPOINTS =====
                         .requestMatchers("/api/users/register", "/api/users/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/{id:[0-9]+}", "/api/products/image/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/reviews/product/**").permitAll()
-                        .requestMatchers("/ws/**").permitAll() // WebSocket handshake
-                        .requestMatchers("/api/contact").permitAll() // Contact form submission
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers("/api/contact").permitAll()
 
-
-                        // ===== USER MANAGEMENT (Self-service vs Admin) =====
+                        // ===== USER MANAGEMENT =====
                         .requestMatchers(HttpMethod.GET, "/api/users").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/users/{id}").hasAnyRole("ADMIN", "BUYER", "SELLER")
                         .requestMatchers(HttpMethod.PUT, "/api/users/{id}").hasAnyRole("ADMIN", "BUYER", "SELLER")
@@ -72,7 +81,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/products/{id:[0-9]+}").hasAnyRole("SELLER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/products/{id:[0-9]+}/image").hasRole("SELLER")
 
-                        // ===== CART MANAGEMENT (Typically Buyer) =====
+                        // ===== CART MANAGEMENT =====
                         .requestMatchers("/api/cart", "/api/cart/**").hasRole("BUYER")
 
                         // ===== ORDER MANAGEMENT =====
@@ -90,13 +99,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/reviews/{reviewId}").hasAnyRole("BUYER", "ADMIN")
 
                         // ===== CHAT MANAGEMENT =====
-                        .requestMatchers("/api/chat/**").authenticated() // Any authenticated user can chat
+                        .requestMatchers("/api/chat/**").authenticated()
 
-                        // ===== Logout Endpoint Configuration (NEW) =====
-                        .requestMatchers(HttpMethod.POST, "/api/users/logout").permitAll() // Explicitly permit POST for this endpoint
+                        // ===== Logout Endpoint =====
+                        .requestMatchers(HttpMethod.POST, "/api/users/logout").permitAll()
 
-
-                        // ===== DEFAULT: ALL OTHER REQUESTS MUST BE AUTHENTICATED =====
+                        // ===== DEFAULT RULE =====
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
@@ -105,12 +113,10 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                 )
-                // === ADD LOGOUT CONFIGURATION HERE ===
                 .logout(logout -> logout
-                                .logoutUrl("/api/users/logout") // The URL your frontend POSTs to for logout
-                                .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler()) // Returns 200 OK on successful logout
-                                .permitAll() // Allow everyone to access the logout endpoint
-                        // No need for invalidateHttpSession or deleteCookies if purely stateless JWT is used
+                        .logoutUrl("/api/users/logout")
+                        .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler())
+                        .permitAll()
                 )
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
 
