@@ -21,10 +21,10 @@ public class User {
     @Column(unique = true, updatable = false)
     private String id;
 
-    @Column(name = "firstName", nullable = false)
+    @Column(name = "firstname", nullable = false)
     private String firstName;
 
-    @Column(name = "lastName", nullable = false)
+    @Column(name = "lastname", nullable = false)
     private String lastName;
 
     @Column(nullable = false, unique = true)
