@@ -24,21 +24,24 @@ public class ChatService {
     @Autowired private ConversationRepository conversationRepository;
     @Autowired private MessageRepository messageRepository;
 
-    public Conversation startOrGetConversation(String user1Id, String user2Id) {
-        return conversationRepository.findByUsers(user1Id, user2Id)
+    // Updated to return ConversationDto
+    public ConversationDto startOrGetConversation(String user1Id, String user2Id) {
+        Conversation conversation = conversationRepository.findByUsers(user1Id, user2Id)
                 .orElseGet(() -> {
                     User user1 = userRepository.findById(user1Id)
                             .orElseThrow(() -> new UserNotFoundException("User1 not found"));
                     User user2 = userRepository.findById(user2Id)
                             .orElseThrow(() -> new UserNotFoundException("User2 not found"));
-                    Conversation conversation = new Conversation();
-                    conversation.setUser1(user1);
-                    conversation.setUser2(user2);
-                    return conversationRepository.save(conversation);
+                    Conversation newConversation = new Conversation();
+                    newConversation.setUser1(user1);
+                    newConversation.setUser2(user2);
+                    return conversationRepository.save(newConversation);
                 });
+        return toDto(conversation); // Convert to DTO before returning
     }
 
-    public Message sendMessage(Long conversationId, String senderId, String encryptedContent) {
+    // Updated to return MessageDto
+    public MessageDto sendMessage(Long conversationId, String senderId, String encryptedContent) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new ConversationNotFoundException("Conversation not found"));
         User sender = userRepository.findById(senderId)
@@ -49,8 +52,10 @@ public class ChatService {
         message.setSender(sender);
         message.setEncryptedContent(encryptedContent);
 
-        return messageRepository.save(message);
+        Message savedMessage = messageRepository.save(message); // Save and then convert
+        return toDto(savedMessage); // Convert to DTO before returning
     }
+
     private ConversationDto toDto(Conversation conversation) {
         ConversationDto dto = new ConversationDto();
         dto.setId(conversation.getId());
@@ -71,6 +76,7 @@ public class ChatService {
         return dto;
     }
 
+    // `getMessages` method signature is correct in ChatService, it already returns List<MessageDto>
     public List<MessageDto> getMessages(Long conversationId) {
         return messageRepository.findByConversationIdOrderBySentAtAsc(conversationId)
                 .stream().map(this::toDto).toList();
@@ -94,11 +100,6 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public int getUnreadMessageCountForUser(String userId) {
-        // This logic depends on how your Message entity and repository are structured.
-        // Assuming MessageRepository has a method like:
-        // countByConversation_User1_IdAndIsReadFalseAndSenderIdNot(String userId, String senderId) +
-        // countByConversation_User2_IdAndIsReadFalseAndSenderIdNot(String userId, String senderId)
-        // Or a more direct query:
-        return messageRepository.countUnreadMessagesForRecipient(userId); // You'll need to define this query
+        return messageRepository.countUnreadMessagesForRecipient(userId);
     }
 }

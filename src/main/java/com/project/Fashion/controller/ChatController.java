@@ -4,7 +4,7 @@ import com.project.Fashion.dto.ConversationDto;
 import com.project.Fashion.dto.MessageDto;
 import com.project.Fashion.dto.ChatMessageRequestDto; // Import new DTO for sending messages
 import com.project.Fashion.model.Conversation;
-import com.project.Fashion.model.Message;
+import com.project.Fashion.model.Message; // Keep if needed for model access directly, though DTOs are preferred
 import com.project.Fashion.model.User;
 import com.project.Fashion.service.ChatService;
 import com.project.Fashion.repository.UserRepository; // Keep for getAuthenticatedUserId
@@ -50,7 +50,6 @@ public class ChatController {
 
     private void authorizeConversationParticipant(Conversation conversation, String authenticatedUserId) {
         if (conversation.getUser1() == null || conversation.getUser2() == null) {
-            // This might happen if conversation entity is not fully loaded or is malformed
             throw new ConversationNotFoundException("Conversation participants not found for conversation ID: " + conversation.getId());
         }
         if (!conversation.getUser1().getId().equals(authenticatedUserId) &&
@@ -62,18 +61,17 @@ public class ChatController {
     @PostMapping("/start")
     @PreAuthorize("isAuthenticated()") // Any authenticated user can attempt to start
     public ResponseEntity<ConversationDto> startConversation(
-            @RequestParam String user1Id, // ID of the first user (could be the authenticated user)
-            @RequestParam String user2Id) { // ID of the second user
+            @RequestParam String user1Id,
+            @RequestParam String user2Id) {
 
         String authenticatedUserId = getAuthenticatedUserId();
 
-        // Authorization: Ensure the authenticated user is one of the participants
         if (!authenticatedUserId.equals(user1Id) && !authenticatedUserId.equals(user2Id)) {
             throw new AccessDeniedException("Authenticated user must be one of the participants to start this conversation.");
         }
 
-        // ChatService.startOrGetConversation should return the rich ConversationDto
-        ConversationDto conversationDto = chatService.startOrGetConversation(user1Id, user2Id, authenticatedUserId);
+        // Corrected: Pass only 2 arguments to chatService.startOrGetConversation
+        ConversationDto conversationDto = chatService.startOrGetConversation(user1Id, user2Id);
         return ResponseEntity.ok(conversationDto);
     }
 
@@ -82,19 +80,16 @@ public class ChatController {
     public ResponseEntity<MessageDto> sendMessage(@Valid @RequestBody ChatMessageRequestDto messageRequestDto) {
         String authenticatedSenderId = getAuthenticatedUserId();
 
-        // Fetch the conversation to ensure the sender is a participant
         Conversation conversation = conversationRepository.findById(messageRequestDto.getConversationId())
                 .orElseThrow(() -> new ConversationNotFoundException("Conversation not found with id: " + messageRequestDto.getConversationId()));
         authorizeConversationParticipant(conversation, authenticatedSenderId);
 
-        // Proceed to send message using authenticatedSenderId, not one from DTO for security
-        // ChatService.sendMessage now takes plain content
+        // This call is now compatible as chatService.sendMessage returns MessageDto
         MessageDto messageDto = chatService.sendMessage(
                 messageRequestDto.getConversationId(),
-                authenticatedSenderId, // Use verified sender ID
+                authenticatedSenderId,
                 messageRequestDto.getContent()
         );
-        // The returned MessageDto should be the rich version with senderName etc.
         return ResponseEntity.ok(messageDto);
     }
 
@@ -107,36 +102,26 @@ public class ChatController {
                 .orElseThrow(() -> new ConversationNotFoundException("Conversation not found with id: " + conversationId));
         authorizeConversationParticipant(conversation, authenticatedUserId);
 
-        // ChatService.getMessages should return List<MessageDto> with senderName and plain content
-        return ResponseEntity.ok(chatService.getMessages(conversationId, authenticatedUserId));
+        // Corrected: Pass only 1 argument to chatService.getMessages
+        return ResponseEntity.ok(chatService.getMessages(conversationId));
     }
 
-    // Endpoint for the authenticated user to get their own conversations
     @GetMapping("/user/me/conversations")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ConversationDto>> getMyConversations() {
         String authenticatedUserId = getAuthenticatedUserId();
-        // ChatService.getUserConversations should return List<ConversationDto>
-        // with participant names, last message, and unread count for the authenticatedUserId
         return ResponseEntity.ok(chatService.getUserConversations(authenticatedUserId));
     }
 
-    // This specific endpoint might be redundant if /user/me/conversations is used.
-    // Kept for now if it serves a different purpose or if frontend uses it explicitly.
     @GetMapping("/user/{userId}/conversations")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ConversationDto>> getUserConversations(@PathVariable String userId) {
         String authenticatedUserId = getAuthenticatedUserId();
         if (!authenticatedUserId.equals(userId)) {
-            // Allow admins to view other users' conversations if needed, otherwise restrict.
-            // For now, restricting to self unless admin role is checked explicitly.
-            // if (!isAdmin(authenticatedUser)) {
             throw new AccessDeniedException("User can only retrieve their own conversations.");
-            // }
         }
         return ResponseEntity.ok(chatService.getUserConversations(userId));
     }
-
 
     @PostMapping("/conversation/{conversationId}/mark-read")
     @PreAuthorize("isAuthenticated()")
@@ -152,7 +137,7 @@ public class ChatController {
     }
 
     @GetMapping("/user/me/unread-count")
-    @PreAuthorize("isAuthenticated()") // Any authenticated user can get their own count
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, Integer>> getMyUnreadMessageCount() {
         String authenticatedUserId = getAuthenticatedUserId();
         int unreadCount = chatService.getUnreadMessageCountForUser(authenticatedUserId);

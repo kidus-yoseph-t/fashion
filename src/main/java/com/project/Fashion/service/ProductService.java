@@ -10,7 +10,7 @@ import com.project.Fashion.model.User;
 import com.project.Fashion.repository.ProductRepository;
 import com.project.Fashion.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
