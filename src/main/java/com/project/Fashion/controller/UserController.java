@@ -1,19 +1,21 @@
 package com.project.Fashion.controller;
 
-import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import com.project.Fashion.dto.AuthResponseDto;
 import com.project.Fashion.dto.UserDto;
 import com.project.Fashion.dto.UserSignInDto;
 import com.project.Fashion.dto.UserSignUpDto;
+import com.project.Fashion.dto.UserProfileUpdateDto; // For self-profile updates
 import com.project.Fashion.service.UserService;
 import lombok.AllArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.security.core.Authentication; // Import Authentication
-import org.springframework.security.core.context.SecurityContextHolder; // Import SecurityContextHolder
-import org.springframework.security.core.userdetails.UserDetails; // Import UserDetails
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 
@@ -23,78 +25,100 @@ import java.util.Map;
 public class UserController {
     private final UserService userService;
 
-    // ... (Your existing signUp and login methods) ...
-
-    // create - Public
     @PostMapping("/register")
-    public ResponseEntity<UserDto> signUp(@RequestBody UserSignUpDto dto){
-        return ResponseEntity.ok(userService.register(dto));
+    public ResponseEntity<UserDto> signUp(@Valid @RequestBody UserSignUpDto dto){
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.register(dto));
     }
 
-    // login - Public
     @PostMapping("/login")
-    @RateLimiter(name = "defaultApiService")
     public ResponseEntity<AuthResponseDto> login(@RequestBody UserSignInDto dto) {
         return ResponseEntity.ok(userService.login(dto));
     }
 
-    // --- NEW ENDPOINT FOR GETTING CURRENT USER'S PROFILE ---
+    @PostMapping("/admin/create-user")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserDto> createUserByAdmin(@Valid @RequestBody UserSignUpDto dto) {
+        UserDto createdUser = userService.createUserByAdmin(dto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+
     @GetMapping("/me")
-    @PreAuthorize("isAuthenticated()") // Ensures only authenticated users can access their own profile
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserDto> getAuthenticatedUser() {
-        // Retrieve the authenticated user's email (or username) from Spring Security Context
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String userEmail = null;
 
-        if (authentication != null && authentication.getPrincipal() instanceof UserDetails) {
-            userEmail = ((UserDetails) authentication.getPrincipal()).getUsername();
-        } else if (authentication != null && authentication.getPrincipal() instanceof String) {
-            userEmail = (String) authentication.getPrincipal();
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof UserDetails) {
+            userEmail = ((UserDetails) principal).getUsername();
+        } else if (principal instanceof String) {
+            userEmail = (String) principal;
+        } else if (principal != null) {
+            userEmail = principal.toString(); // Fallback, might not be email
+        }
+
+
+        if (userEmail == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        UserDto userDto = userService.findUserDtoByEmail(userEmail);
+        return ResponseEntity.ok(userDto);
+    }
+
+    @PatchMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UserDto> updateMyProfile(@Valid @RequestBody UserProfileUpdateDto profileUpdateDto) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String userEmail = null;
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof UserDetails) {
+            userEmail = ((UserDetails) principal).getUsername();
+        } else if (principal instanceof String) {
+            userEmail = (String) principal;
+        } else if (principal != null) {
+            userEmail = principal.toString();
         }
 
         if (userEmail == null) {
-            // This case should ideally not happen with @PreAuthorize("isAuthenticated()")
-            // but good for defensive programming.
-            return ResponseEntity.status(401).build(); // Unauthorized if principal is not found
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // Call a UserService method to get the user's DTO by their email
-        // You'll need to add a method like findUserDtoByEmail(String email) to your UserService
-        UserDto userDto = userService.findUserDtoByEmail(userEmail); // Assume this method exists
-        return ResponseEntity.ok(userDto);
+        UserDto currentUserDto = userService.findUserDtoByEmail(userEmail); // Ensure this method exists and works
+        if (currentUserDto == null || currentUserDto.getId() == null) {
+            // This case should ideally not be reached if user is authenticated
+            // and findUserDtoByEmail is robust (throws if not found)
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null); // Or a more specific error
+        }
+
+        UserDto updatedUser = userService.updateSelfProfile(currentUserDto.getId(), profileUpdateDto);
+        return ResponseEntity.ok(updatedUser);
     }
-    // --- END NEW ENDPOINT ---
 
-
-    // retrieve all users - Example: Admin only
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserDto>> getAllUsers(){
         return ResponseEntity.ok(userService.getAllUsers());
     }
 
-    // retrieve specific user - Example: Admin or the user themselves
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @userSecurity.isOwner(authentication, #id)")
     public ResponseEntity<UserDto> getUser(@PathVariable String id) {
         return ResponseEntity.ok(userService.getUser(id));
     }
 
-    // update - Example: Admin or the user themselves
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @userSecurity.isOwner(authentication, #id)")
-    public ResponseEntity<UserDto> updateUser(@PathVariable String id, @RequestBody UserSignUpDto updatedDto) {
+    public ResponseEntity<UserDto> updateUser(@PathVariable String id, @Valid @RequestBody UserSignUpDto updatedDto) {
         return ResponseEntity.ok(userService.updateUser(id, updatedDto));
     }
 
-    // patch - Example: Admin or the user themselves
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @userSecurity.isOwner(authentication, #id)")
     public ResponseEntity<UserDto> patchUser(@PathVariable String id, @RequestBody Map<String, Object> updates) {
         return ResponseEntity.ok(userService.patchUser(id, updates));
     }
 
-    // delete - Example: Admin only
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteUser(@PathVariable String id) {

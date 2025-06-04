@@ -6,11 +6,14 @@ import com.project.Fashion.dto.CartItemQuantityUpdateDto;
 import com.project.Fashion.model.Cart;
 import com.project.Fashion.model.User;
 import com.project.Fashion.service.CartService;
-import com.project.Fashion.repository.CartRepository;
+// CartRepository is not strictly needed here anymore if all auth checks are based on authenticated user
+// and service layer handles fetches by ID.
+// import com.project.Fashion.repository.CartRepository;
 import com.project.Fashion.repository.UserRepository;
 import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.exception.exceptions.CartNotFoundException;
 import com.project.Fashion.exception.exceptions.InvalidFieldException;
+
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -26,20 +29,17 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping(path = "/api/cart", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(path = "/api/cart")
 public class CartController {
 
     private final CartService cartService;
     private final UserRepository userRepository;
-    private final CartRepository cartRepository;
+    // private final CartRepository cartRepository; // Can be removed if not directly used
 
     @Autowired
-    public CartController(CartService cartService,
-                          UserRepository userRepository,
-                          CartRepository cartRepository) {
+    public CartController(CartService cartService, UserRepository userRepository) {
         this.cartService = cartService;
         this.userRepository = userRepository;
-        this.cartRepository = cartRepository;
     }
 
     private User getAuthenticatedUser() {
@@ -52,13 +52,14 @@ public class CartController {
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found with email: " + currentPrincipalName));
     }
 
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping // No path, defaults to /api/cart
     public ResponseEntity<CartResponseDto> addCart(@RequestBody @Valid CartRequestDto cartRequestDto) {
         User authenticatedUser = getAuthenticatedUser();
 
         if (!authenticatedUser.getId().equals(cartRequestDto.getUserId())) {
             throw new AccessDeniedException("User can only add items to their own cart.");
         }
+        // Quantity validation is now also in service, but good to keep here for early fail
         if (cartRequestDto.getQuantity() <= 0) {
             throw new InvalidFieldException("Quantity must be positive.");
         }
@@ -66,72 +67,59 @@ public class CartController {
         return ResponseEntity.ok(cartService.addCart(cartRequestDto));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<CartResponseDto> getCart(@PathVariable Long id) {
+    @GetMapping("/user/me") // Changed from /user/{userId} to /user/me for fetching own cart
+    public ResponseEntity<List<CartResponseDto>> getMyCart() {
         User authenticatedUser = getAuthenticatedUser();
-        // Fetch Cart entity using service method that takes Long
-        Cart cart = cartService.getCartById(id); // Assuming CartService.getCartById(Long) exists
+        return ResponseEntity.ok(cartService.getCartDtosByUser(authenticatedUser.getId()));
+    }
+
+    // Get a specific cart item by its ID (cart_item_id)
+    @GetMapping("/{cartItemId}")
+    public ResponseEntity<CartResponseDto> getCartItem(@PathVariable Long cartItemId) {
+        User authenticatedUser = getAuthenticatedUser();
+        Cart cart = cartService.getCartById(cartItemId);
 
         if (cart.getUser() == null || !cart.getUser().getId().equals(authenticatedUser.getId())) {
-            throw new AccessDeniedException("User can only view their own cart details.");
+            throw new AccessDeniedException("User can only view their own cart items.");
         }
 
         return ResponseEntity.ok(cartService.convertToDTO(cart));
     }
 
-    @PutMapping("/{id}/quantity")
+    @PutMapping("/{cartItemId}/quantity")
     public ResponseEntity<CartResponseDto> updateCartItemQuantity(
-            @PathVariable Long id,
+            @PathVariable Long cartItemId,
             @RequestBody @Valid CartItemQuantityUpdateDto quantityUpdateDto) {
 
         User authenticatedUser = getAuthenticatedUser();
-        // Fetch cart to check ownership before attempting update
-        Cart existingCart = cartService.getCartById(id);
+        Cart existingCartItem = cartService.getCartById(cartItemId);
 
-        if (existingCart.getUser() == null || !existingCart.getUser().getId().equals(authenticatedUser.getId())) {
+        if (existingCartItem.getUser() == null || !existingCartItem.getUser().getId().equals(authenticatedUser.getId())) {
             throw new AccessDeniedException("User can only update their own cart items.");
         }
 
-        if (quantityUpdateDto.getQuantity() <= 0) {
-            throw new InvalidFieldException("Quantity must be positive.");
-        }
+        // Quantity validation (e.g. @Min(1)) is on DTO
 
-        Cart updatedCart = cartService.updateCartItemQuantity(id, quantityUpdateDto.getQuantity());
+        Cart updatedCart = cartService.updateCartItemQuantity(cartItemId, quantityUpdateDto.getQuantity());
 
         return ResponseEntity.ok(cartService.convertToDTO(updatedCart));
     }
 
-    @PatchMapping("/{id}/quantity")
-    public ResponseEntity<CartResponseDto> patchCartItemQuantity(
-            @PathVariable Long id,
-            @RequestBody @Valid CartItemQuantityUpdateDto quantityUpdateDto) {
+    @PatchMapping("/{cartItemId}")
+    public ResponseEntity<CartResponseDto> patchCartItem(
+            @PathVariable Long cartItemId,
+            @RequestBody Map<String, Object> updates) { // Keep generic patch for flexibility if needed
         User authenticatedUser = getAuthenticatedUser();
-        Cart existingCart = cartService.getCartById(id);
+        Cart existingCartItem = cartService.getCartById(cartItemId);
 
-        if (existingCart.getUser() == null || !existingCart.getUser().getId().equals(authenticatedUser.getId())) {
+        if (existingCartItem.getUser() == null || !existingCartItem.getUser().getId().equals(authenticatedUser.getId())) {
             throw new AccessDeniedException("User can only patch their own cart items.");
         }
 
-        if (quantityUpdateDto.getQuantity() <= 0) {
-            throw new InvalidFieldException("Quantity must be positive.");
-        }
-
-        Cart patchedCart = cartService.updateCartItemQuantity(id, quantityUpdateDto.getQuantity());
-        return ResponseEntity.ok(cartService.convertToDTO(patchedCart));
-    }
-
-    @PatchMapping("/{id}")
-    public ResponseEntity<CartResponseDto> patchCart(@PathVariable Long id, @RequestBody Map<String, Object> updates) {
-        User authenticatedUser = getAuthenticatedUser();
-        Cart existingCart = cartService.getCartById(id);
-
-        if (existingCart.getUser() == null || !existingCart.getUser().getId().equals(authenticatedUser.getId())) {
-            throw new AccessDeniedException("User can only patch their own cart items.");
-        }
-
+        // Validate that only "quantity" is being patched, as per previous logic
         for (String key : updates.keySet()) {
             if (!key.equals("quantity")) {
-                throw new AccessDeniedException("Field '" + key + "' cannot be updated via this patch endpoint. Only 'quantity' is allowed. Use specific endpoints for other fields if available.");
+                throw new AccessDeniedException("Field '" + key + "' cannot be updated via this patch endpoint. Only 'quantity' is allowed.");
             }
         }
 
@@ -141,36 +129,32 @@ public class CartController {
                 throw new InvalidFieldException("Quantity must be an integer.");
             }
             if ((Integer) quantityObj <= 0) {
-                throw new InvalidFieldException("Quantity must be positive.");
+                // Service layer's patchCart now also throws if quantity <=0
+                throw new InvalidFieldException("Quantity must be positive. To remove, use DELETE.");
             }
         }
 
-        Cart patchedCart = cartService.patchCart(id, updates);
+        Cart patchedCart = cartService.patchCart(cartItemId, updates);
         return ResponseEntity.ok(cartService.convertToDTO(patchedCart));
     }
 
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteCart(@PathVariable Long id) {
+    @DeleteMapping("/{cartItemId}")
+    public ResponseEntity<Void> deleteCartItem(@PathVariable Long cartItemId) {
         User authenticatedUser = getAuthenticatedUser();
-        Cart existingCart = cartService.getCartById(id);
+        Cart existingCartItem = cartService.getCartById(cartItemId);
 
-        if (existingCart.getUser() == null || !existingCart.getUser().getId().equals(authenticatedUser.getId())) {
+        if (existingCartItem.getUser() == null || !existingCartItem.getUser().getId().equals(authenticatedUser.getId())) {
             throw new AccessDeniedException("User can only delete their own cart items.");
         }
 
-        cartService.deleteCart(id);
+        cartService.deleteCartItem(cartItemId);
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<CartResponseDto>> getCartsByUser(@PathVariable String userId) {
+    @DeleteMapping("/user/me/clear") // New endpoint to clear the authenticated user's cart
+    public ResponseEntity<Void> clearMyCart() {
         User authenticatedUser = getAuthenticatedUser();
-
-        if (!authenticatedUser.getId().equals(userId)) {
-            throw new AccessDeniedException("User can only retrieve their own list of cart items.");
-        }
-
-        return ResponseEntity.ok(cartService.getCartDtosByUser(userId));
+        cartService.clearUserCart(authenticatedUser.getId());
+        return ResponseEntity.noContent().build();
     }
 }

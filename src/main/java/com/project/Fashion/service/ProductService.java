@@ -1,6 +1,7 @@
 package com.project.Fashion.service;
 
 import com.project.Fashion.dto.ProductDto;
+import com.project.Fashion.dto.ProductPriceRangeDto;
 import com.project.Fashion.config.mappers.ProductMapper;
 import com.project.Fashion.exception.exceptions.ProductNotFoundException;
 import com.project.Fashion.exception.exceptions.UserNotFoundException;
@@ -12,9 +13,9 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.CacheEvict; // Import CacheEvict
-import org.springframework.cache.annotation.Cacheable;  // Import Cacheable
-import org.springframework.cache.annotation.Caching;    // Import Caching
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,8 +35,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections; // For Collections.emptyList()
 import java.util.List;
-// import java.util.Optional; // No longer needed directly here
+
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
@@ -51,7 +53,6 @@ public class ProductService {
 
     private static final String UPLOAD_DIR = "src/main/resources/static/uploads/products";
 
-    // Helper method to get the current authenticated user's ID and role
     private User getCurrentAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
@@ -70,7 +71,6 @@ public class ProductService {
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found in database. Email: " + email));
     }
 
-    // Helper method to check product ownership for a SELLER
     private void checkProductOwnership(Product product, User seller) {
         if (!"SELLER".equalsIgnoreCase(seller.getRole())) {
             throw new AccessDeniedException("User performing the action is not a SELLER.");
@@ -104,7 +104,7 @@ public class ProductService {
         String sortProperty = StringUtils.hasText(sortBy) ? sortBy : "name";
         List<String> validSortProperties = List.of("name", "price", "averageRating", "id");
         if (!validSortProperties.contains(sortProperty)) {
-            sortProperty = "name";
+            sortProperty = "name"; // Default sort property
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortProperty));
@@ -126,7 +126,7 @@ public class ProductService {
             if (maxPrice != null) {
                 predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("price"), maxPrice));
             }
-            if (minRating != null) {
+            if (minRating != null && minRating > 0) { // Only apply if minRating is positive
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("averageRating"), minRating));
             }
 
@@ -158,22 +158,26 @@ public class ProductService {
         }
         productDto.setSellerId(authenticatedSeller.getId());
 
-        User seller = userRepository.findById(productDto.getSellerId())
+        User seller = userRepository.findById(productDto.getSellerId()) // This should be authenticatedSeller
                 .orElseThrow(() -> new UserNotFoundException("Seller not found with id: " + productDto.getSellerId()));
 
         Product product = productMapper.toEntity(productDto);
-        product.setSeller(seller);
+        product.setSeller(seller); // Set the seller object
         product.setAverageRating(0.0f);
         product.setNumOfReviews(0);
 
         Product savedProduct = productRepository.save(product);
         log.info("Product {} created by seller {}. Evicting 'productsList' cache.", savedProduct.getId(), seller.getEmail());
+        // Also evict categories cache as a new product might have a new category or affect category lists
+        // This requires a cache name for categories, e.g., "productCategories"
+        // For now, this is manual. If categories are cached, evict here.
         return productMapper.toDto(savedProduct);
     }
 
     @Caching(evict = {
             @CacheEvict(value = "products", key = "#id"),
             @CacheEvict(value = "productsList", allEntries = true)
+            // Add @CacheEvict(value = "productCategories", allEntries = true) if categories are cached
     })
     public ProductDto updateProduct(Long id, ProductDto productDto) {
         User authenticatedUser = getCurrentAuthenticatedUser();
@@ -182,29 +186,34 @@ public class ProductService {
 
         checkProductOwnership(existingProduct, authenticatedUser);
 
+        boolean categoryChanged = false;
         if (StringUtils.hasText(productDto.getName())) {
             existingProduct.setName(productDto.getName());
         }
         if (StringUtils.hasText(productDto.getDescription())) {
             existingProduct.setDescription(productDto.getDescription());
         }
-        if (productDto.getPrice() >= 0) {
+        if (productDto.getPrice() >= 0) { // Price can be 0
             existingProduct.setPrice(productDto.getPrice());
         } else {
             throw new IllegalArgumentException("Price cannot be negative.");
         }
-        if (StringUtils.hasText(productDto.getCategory())) {
+        if (StringUtils.hasText(productDto.getCategory()) && !existingProduct.getCategory().equalsIgnoreCase(productDto.getCategory())) {
             existingProduct.setCategory(productDto.getCategory());
+            categoryChanged = true; // Flag if category changed for cache eviction
         }
+        // Note: sellerId, averageRating, numOfReviews are typically not updated directly via this DTO.
 
         Product updatedProduct = productRepository.save(existingProduct);
-        log.info("Product {} updated by owner {}. Evicting 'products' cache for key {} and 'productsList' cache.", updatedProduct.getId(), authenticatedUser.getEmail(), id);
+        log.info("Product {} updated by owner {}. Evicting relevant caches.", updatedProduct.getId(), authenticatedUser.getEmail());
+        // If categoryChanged and categories are cached, evict "productCategories" cache here.
         return productMapper.toDto(updatedProduct);
     }
 
     @Caching(evict = {
             @CacheEvict(value = "products", key = "#id"),
             @CacheEvict(value = "productsList", allEntries = true)
+            // Add @CacheEvict(value = "productCategories", allEntries = true)
     })
     public void deleteProduct(Long id) {
         User authenticatedUser = getCurrentAuthenticatedUser();
@@ -223,7 +232,7 @@ public class ProductService {
                     authenticatedUser.getEmail(), authenticatedUser.getRole(), id);
             throw new AccessDeniedException("Access Denied: You do not have permission to delete this product.");
         }
-        log.info("Evicting 'products' cache for key {} and 'productsList' cache due to deletion.", id);
+        log.info("Evicting relevant caches due to deletion of product {}.", id);
         productRepository.deleteById(id);
     }
 
@@ -257,12 +266,34 @@ public class ProductService {
 
             product.setPhotoUrl(fileUrl);
             Product savedProduct = productRepository.save(product);
-            log.info("Image added to product {} by owner {}. Evicting 'products' cache for key {} and 'productsList' cache.", savedProduct.getId(), authenticatedSeller.getEmail(), productId);
+            log.info("Image added to product {} by owner {}. Evicting relevant caches.", savedProduct.getId(), authenticatedSeller.getEmail());
             return productMapper.toDto(savedProduct);
 
         } catch (IOException e) {
             log.error("Failed to store file for product id {}: {}", productId, e.getMessage(), e);
             throw new RuntimeException("Failed to store file. " + e.getMessage(), e);
         }
+    }
+
+    // New method to get distinct categories
+    @Transactional(readOnly = true)
+    @Cacheable("productCategories") // Cache the list of categories
+    public List<String> getDistinctCategories() {
+        log.info("Fetching distinct categories from database.");
+        List<String> categories = productRepository.findDistinctCategories();
+        return categories != null ? categories : Collections.emptyList();
+    }
+
+    // New method to get product price range
+    @Transactional(readOnly = true)
+    @Cacheable("productPriceRange") // Cache the price range
+    public ProductPriceRangeDto getProductPriceRange() {
+        log.info("Fetching product price range from database.");
+        Float minPrice = productRepository.findMinPrice();
+        Float maxPrice = productRepository.findMaxPrice();
+        return new ProductPriceRangeDto(
+                minPrice != null ? minPrice : 0.0f,
+                maxPrice != null ? maxPrice : 0.0f // Or a sensible default like 1000.0f if no products
+        );
     }
 }

@@ -11,6 +11,7 @@ import com.project.Fashion.model.User;
 import com.project.Fashion.repository.ConversationRepository;
 import com.project.Fashion.repository.MessageRepository;
 import com.project.Fashion.repository.UserRepository;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -89,5 +90,15 @@ public class ChatService {
         List<Message> unreadMessages = messageRepository.findUnreadMessagesForUser(conversationId, userId);
         unreadMessages.forEach(msg -> msg.setRead(true));
         messageRepository.saveAll(unreadMessages);
+    }
+
+    @Transactional(readOnly = true)
+    public int getUnreadMessageCountForUser(String userId) {
+        // This logic depends on how your Message entity and repository are structured.
+        // Assuming MessageRepository has a method like:
+        // countByConversation_User1_IdAndIsReadFalseAndSenderIdNot(String userId, String senderId) +
+        // countByConversation_User2_IdAndIsReadFalseAndSenderIdNot(String userId, String senderId)
+        // Or a more direct query:
+        return messageRepository.countUnreadMessagesForRecipient(userId); // You'll need to define this query
     }
 }

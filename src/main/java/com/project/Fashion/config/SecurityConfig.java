@@ -84,6 +84,9 @@ public class SecurityConfig {
                         // ===== CART MANAGEMENT =====
                         .requestMatchers("/api/cart", "/api/cart/**").hasRole("BUYER")
 
+                        // ===== FAVORITES MANAGEMENT =====
+                        .requestMatchers("/api/users/me/favorites", "/api/users/me/favorites/**").hasRole("BUYER")
+
                         // ===== ORDER MANAGEMENT =====
                         .requestMatchers(HttpMethod.POST, "/api/orders", "/api/orders/checkout").hasRole("BUYER")
                         .requestMatchers(HttpMethod.GET, "/api/orders").hasRole("ADMIN")

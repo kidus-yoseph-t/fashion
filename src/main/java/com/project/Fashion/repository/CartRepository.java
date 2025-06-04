@@ -5,6 +5,7 @@ import com.project.Fashion.model.Cart;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import java.util.Optional;
 
 import java.util.List;
 
@@ -20,6 +21,7 @@ public interface CartRepository extends JpaRepository<Cart, Long> {
             "JOIN c.user u " +
             "WHERE u.id = :userId")
     List<CartResponseDto> findCartDtosByUserId(@Param("userId") String userId);
+    Optional<Cart> findByUserIdAndProductId(String userId, Long productId);
 
 }
 
