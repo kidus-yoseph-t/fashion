@@ -1,10 +1,13 @@
-// src/main/java/com/yourcompany/yourapp/service/ContactMessageService.java
 package com.project.Fashion.service;
 
 import com.project.Fashion.model.ContactMessage;
 import com.project.Fashion.repository.ContactMessageRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -12,38 +15,78 @@ import java.util.Optional;
 @Service
 public class ContactMessageService {
 
-    @Autowired
-    private ContactMessageRepository contactMessageRepository;
+    private static final Logger logger = LoggerFactory.getLogger(ContactMessageService.class);
 
-    // Method to save a new contact message (from the contact form)
-    public ContactMessage saveMessage(ContactMessage message) {
-        return contactMessageRepository.save(message);
+    private final ContactMessageRepository contactMessageRepository;
+    private final SimpMessagingTemplate messagingTemplate; // Inject SimpMessagingTemplate
+
+    // WebSocket topic for new contact messages for admins
+    private static final String ADMIN_NEW_CONTACT_MESSAGE_TOPIC = "/topic/admin/newContactMessage";
+
+    @Autowired
+    public ContactMessageService(ContactMessageRepository contactMessageRepository,
+                                 SimpMessagingTemplate messagingTemplate) { // Add to constructor
+        this.contactMessageRepository = contactMessageRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
-    // Method for admins to get all messages
+    @Transactional
+    public ContactMessage saveMessage(ContactMessage message) {
+        // Ensure createdAt is set if not handled automatically by @PrePersist in model
+        if (message.getCreatedAt() == null) {
+            message.setCreatedAt(java.time.LocalDateTime.now());
+        }
+        // Ensure status is set if not handled by default in model
+        if (message.getStatus() == null || message.getStatus().isEmpty()) {
+            message.setStatus("unread");
+        }
+
+        ContactMessage savedMessage = contactMessageRepository.save(message);
+        logger.info("Contact message ID {} saved from sender: {}", savedMessage.getId(), savedMessage.getSenderEmail());
+
+        // After saving, send the message to the admin WebSocket topic
+        if (savedMessage != null) {
+            logger.info("Sending new contact message notification to WebSocket topic: {}", ADMIN_NEW_CONTACT_MESSAGE_TOPIC);
+            messagingTemplate.convertAndSend(ADMIN_NEW_CONTACT_MESSAGE_TOPIC, savedMessage);
+            // Frontend (admin dashboard) should subscribe to "/topic/admin/newContactMessage"
+            // The payload will be the savedContactMessage object (JSON).
+        }
+        return savedMessage;
+    }
+
     public List<ContactMessage> getAllMessages() {
+        logger.debug("Fetching all contact messages for admin.");
         return contactMessageRepository.findAll();
     }
 
-    // Method for admins to get a single message by ID
     public Optional<ContactMessage> getMessageById(Long id) {
+        logger.debug("Fetching contact message by ID: {}", id);
         return contactMessageRepository.findById(id);
     }
 
-    // Method for admins to delete a message
+    @Transactional
     public void deleteMessage(Long id) {
-        contactMessageRepository.deleteById(id);
+        if (contactMessageRepository.existsById(id)) {
+            contactMessageRepository.deleteById(id);
+            logger.info("Deleted contact message with ID: {}", id);
+        } else {
+            logger.warn("Attempted to delete non-existent contact message with ID: {}", id);
+        }
     }
 
-    // Method for admins to update message status (read/unread)
+    @Transactional
     public ContactMessage updateMessageStatus(Long id, String newStatus) {
         Optional<ContactMessage> optionalMessage = contactMessageRepository.findById(id);
         if (optionalMessage.isPresent()) {
             ContactMessage message = optionalMessage.get();
-            message.setStatus(newStatus);
-            return contactMessageRepository.save(message);
+            message.setStatus(newStatus.toLowerCase()); // Store status consistently (e.g., lowercase)
+            ContactMessage updatedMessage = contactMessageRepository.save(message);
+            logger.info("Updated status of contact message ID {} to '{}'", id, newStatus);
+            // Optionally, you could also send an update to a WebSocket topic if admins need real-time status changes
+            // messagingTemplate.convertAndSend("/topic/admin/contactMessageUpdated", updatedMessage);
+            return updatedMessage;
         }
-        // You might want to throw an exception here if message is not found
-        return null;
+        logger.warn("Attempted to update status for non-existent contact message ID: {}", id);
+        return null; // Or throw an exception
     }
 }

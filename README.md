@@ -8,7 +8,7 @@ This project is a backend API for a fashion e-commerce platform, built using **S
 
 ## Key Features
 
-- **User Management** (Planned):
+- **User Management**:
     - Registration & login using JWT-based security
     - Role-based access (Buyer & Seller)
 

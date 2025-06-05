@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "contact_messages") // This will be the table name in your database
+@Table(name = "contact_messages")
 public class ContactMessage {
 
     @Id
