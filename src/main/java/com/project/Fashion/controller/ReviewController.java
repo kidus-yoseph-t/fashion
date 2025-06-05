@@ -9,9 +9,22 @@ import com.project.Fashion.repository.UserRepository;
 import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.exception.exceptions.ReviewNotFoundException;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -20,11 +33,12 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/reviews")
+@Tag(name = "Review Management", description = "APIs for managing product reviews.")
 public class ReviewController {
 
     private final ReviewService reviewService;
     private final UserRepository userRepository;
-    private final ReviewRepository reviewRepository; // For fetching review directly for auth checks
+    private final ReviewRepository reviewRepository;
 
     @Autowired
     public ReviewController(ReviewService reviewService,
@@ -35,10 +49,6 @@ public class ReviewController {
         this.reviewRepository = reviewRepository;
     }
 
-    /**
-     * Helper method to get the authenticated user's details.
-     * @return Authenticated User object.
-     */
     private User getAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
@@ -49,35 +59,71 @@ public class ReviewController {
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found with email: " + currentPrincipalName));
     }
 
-    // This endpoint is public as per SecurityConfig (GET /api/reviews/product/**). No specific auth check needed here.
+    @Operation(summary = "Get all reviews for a specific product (Public)",
+            description = "Retrieves a list of all reviews submitted for a given product ID. This endpoint is public.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved reviews for the product",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            array = @ArraySchema(schema = @Schema(implementation = ReviewDto.class)))),
+            @ApiResponse(responseCode = "404", description = "Product not found (if product with given ID doesn't exist, though service currently returns empty list)",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(example = "{\"message\":\"Product not found with ID: 123\"}")))
+    })
     @GetMapping("/product/{productId}")
-    public ResponseEntity<List<ReviewDto>> getReviewsByProduct(@PathVariable Long productId) {
+    public ResponseEntity<List<ReviewDto>> getReviewsByProduct(
+            @Parameter(description = "ID of the product to fetch reviews for", required = true, example = "1")
+            @PathVariable Long productId) {
+        // Service currently returns empty list if product not found, not a 404 from controller.
+        // If ProductNotFoundException were thrown from service for non-existent product, GlobalExceptionHandler would handle 404.
         return ResponseEntity.ok(reviewService.getReviewsByProduct(productId));
     }
 
+    @Operation(summary = "Add a new review for a product (Buyer only)",
+            description = "Allows an authenticated BUYER to add a review for a product they have purchased. The user ID in the path must match the authenticated user.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Review added successfully", // Consider 201 Created
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ReviewDto.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid input (e.g., rating out of bounds, empty comment if required)",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"rating\":\"Rating must be between 1 and 5\"}"))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not a BUYER, user ID mismatch, or user has not purchased the product, or already reviewed)"),
+            @ApiResponse(responseCode = "404", description = "Product or User not found"),
+            @ApiResponse(responseCode = "409", description = "Conflict (e.g., user has already reviewed this product if such a check is strictly enforced by throwing an exception for it)",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"message\":\"You have already reviewed this product.\"}")))
+    })
     @PostMapping("/product/{productId}/user/{userId}")
+    @PreAuthorize("hasRole('BUYER')")
     public ResponseEntity<ReviewDto> addReview(
-            @PathVariable Long productId,
-            @PathVariable String userId, // The user ID of the person submitting the review
-            @RequestBody ReviewDto reviewDto) {
+            @Parameter(description = "ID of the product being reviewed", required = true, example = "1") @PathVariable Long productId,
+            @Parameter(description = "ID of the user submitting the review (must match authenticated user)", required = true, example = "user-uuid-123") @PathVariable String userId,
+            @Valid @RequestBody ReviewDto reviewDto) { // Assuming ReviewDto has validation annotations
 
         User authenticatedUser = getAuthenticatedUser();
-
-        // Authorization: Ensure the userId in the path matches the authenticated user.
-        // Role check (BUYER) is handled by SecurityConfig.
         if (!authenticatedUser.getId().equals(userId)) {
             throw new AccessDeniedException("User can only add reviews for themselves.");
         }
-
-        // The reviewDto might or might not contain userId and productId.
-        // The service method addReview(productId, userId, reviewDto) uses the path variables, which is good.
+        // Service layer handles purchased check and if already reviewed.
+        // Consider returning HttpStatus.CREATED (201) for successful creation.
         return ResponseEntity.ok(reviewService.addReview(productId, userId, reviewDto));
     }
 
+    @Operation(summary = "Update an existing review (Buyer Owner or Admin only)",
+            description = "Allows the BUYER who owns the review or an ADMIN to update an existing review. The review ID is used to identify the review.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Review updated successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ReviewDto.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid input for update"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not the owner of the review and not an ADMIN)"),
+            @ApiResponse(responseCode = "404", description = "Review not found")
+    })
     @PutMapping("/{reviewId}")
+    @PreAuthorize("hasAnyRole('BUYER', 'ADMIN')")
     public ResponseEntity<ReviewDto> updateReview(
-            @PathVariable Long reviewId,
-            @RequestBody ReviewDto reviewDto) {
+            @Parameter(description = "ID of the review to update", required = true, example = "10") @PathVariable Long reviewId,
+            @Valid @RequestBody ReviewDto reviewDto) { // Assuming ReviewDto has validation for update
 
         User authenticatedUser = getAuthenticatedUser();
         Review existingReview = reviewRepository.findById(reviewId)
@@ -86,23 +132,27 @@ public class ReviewController {
         String userRole = authenticatedUser.getRole().toUpperCase();
 
         if ("BUYER".equals(userRole)) {
-            // Buyer can only update their own review.
             if (existingReview.getUser() == null || !existingReview.getUser().getId().equals(authenticatedUser.getId())) {
                 throw new AccessDeniedException("Buyers can only update their own reviews.");
             }
-        } else if (!"ADMIN".equals(userRole)) {
-            // If not ADMIN or authorized BUYER
-            throw new AccessDeniedException("User does not have permission to update this review.");
-        }
-        // ADMIN can update any review (role check from SecurityConfig is primary, this allows them through)
+        } // ADMIN can proceed (checked by @PreAuthorize)
 
-        // The reviewDto should contain the updated rating and comment.
-        // The service method updateReview(reviewId, reviewDto) handles the update logic.
         return ResponseEntity.ok(reviewService.updateReview(reviewId, reviewDto));
     }
 
+    @Operation(summary = "Delete a review (Buyer Owner or Admin only)",
+            description = "Allows the BUYER who owns the review or an ADMIN to delete an existing review by its ID.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Review deleted successfully"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not the owner of the review and not an ADMIN)"),
+            @ApiResponse(responseCode = "404", description = "Review not found")
+    })
     @DeleteMapping("/{reviewId}")
-    public ResponseEntity<Void> deleteReview(@PathVariable Long reviewId) {
+    @PreAuthorize("hasAnyRole('BUYER', 'ADMIN')")
+    public ResponseEntity<Void> deleteReview(
+            @Parameter(description = "ID of the review to delete", required = true, example = "10") @PathVariable Long reviewId) {
         User authenticatedUser = getAuthenticatedUser();
         Review existingReview = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new ReviewNotFoundException("Review not found with id: " + reviewId));
@@ -110,15 +160,10 @@ public class ReviewController {
         String userRole = authenticatedUser.getRole().toUpperCase();
 
         if ("BUYER".equals(userRole)) {
-            // Buyer can only delete their own review.
             if (existingReview.getUser() == null || !existingReview.getUser().getId().equals(authenticatedUser.getId())) {
                 throw new AccessDeniedException("Buyers can only delete their own reviews.");
             }
-        } else if (!"ADMIN".equals(userRole)) {
-            // If not ADMIN or authorized BUYER
-            throw new AccessDeniedException("User does not have permission to delete this review.");
-        }
-        // ADMIN can delete any review.
+        } // ADMIN can proceed (checked by @PreAuthorize)
 
         reviewService.deleteReview(reviewId);
         return ResponseEntity.noContent().build();

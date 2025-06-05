@@ -20,7 +20,7 @@ public class AdminUserInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // Define default admin credentials (consider moving to application.properties for configurability)
+    // Define default admin credentials (it can be moved to application.properties for configurability)
     private static final String ADMIN_EMAIL = "admin@fashion.com";
     private static final String ADMIN_PASSWORD = "Password123";
     private static final String ADMIN_FIRST_NAME = "Admin";

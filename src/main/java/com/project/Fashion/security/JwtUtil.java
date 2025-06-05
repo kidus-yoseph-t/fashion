@@ -12,33 +12,25 @@ import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret}") // You'll need to set this in application.properties
+    @Value("${jwt.secret}")
     private String secret;
 
-    @Value("${jwt.expiration.ms}") // And this for expiration time
+    @Value("${jwt.expiration.ms}")
     private long expirationMs;
 
+    // Standard claim name for JWT ID
+    private static final String JTI_CLAIM = "jti";
+
     private Key getSigningKey() {
-        // For HS512, key length must be at least 64 bytes.
-        // Ensure your jwt.secret is long and random enough.
-        // If it's shorter, this might cause issues or you might need to use a different algorithm like HS256.
         byte[] keyBytes = secret.getBytes();
-        if (keyBytes.length < 64 && SignatureAlgorithm.HS512.getMinKeyLength() > keyBytes.length * 8) {
-            // If secret is too short for HS512, use a key derived to meet length requirements or use HS256
-            // For simplicity, let's assume the secret is configured to be sufficiently long for HS512.
-            // Or, generate a secure key once and store it:
-            // Key key = Keys.secretKeyFor(SignatureAlgorithm.HS512);
-            // String base64Key = Encoders.BASE64.encode(key.getEncoded());
-            // Then store base64Key in properties and decode here.
-            // For now, we directly use the bytes, ensure it's strong.
-            return Keys.hmacShaKeyFor(keyBytes); // This adapts the key if needed for common HMAC-SHA
-        }
+        // Ensure your jwt.secret is long and random enough for HS512.
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
@@ -48,6 +40,11 @@ public class JwtUtil {
 
     public Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
+    }
+
+    // Method to extract JTI
+    public String extractJti(String token) {
+        return extractClaim(token, claims -> claims.get(JTI_CLAIM, String.class));
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
@@ -60,16 +57,22 @@ public class JwtUtil {
     }
 
     private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
+        try {
+            return extractExpiration(token).before(new Date());
+        } catch (Exception e) {
+            // If any error occurs during expiration check (e.g., malformed token), treat as expired/invalid.
+            return true;
+        }
     }
 
     public String generateToken(UserDetails userDetails) {
         Map<String, Object> claims = new HashMap<>();
-        // Add roles to claims
         String roles = userDetails.getAuthorities().stream()
                 .map(grantedAuthority -> grantedAuthority.getAuthority())
                 .collect(Collectors.joining(","));
         claims.put("roles", roles);
+        // Add JTI claim
+        claims.put(JTI_CLAIM, UUID.randomUUID().toString());
         return createToken(claims, userDetails.getUsername());
     }
 
@@ -84,7 +87,13 @@ public class JwtUtil {
     }
 
     public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+        try {
+            final String username = extractUsername(token);
+            return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+        } catch (Exception e) {
+            // If any error occurs during validation (e.g., malformed token, signature mismatch),
+            // it's not a valid token.
+            return false;
+        }
     }
 }
