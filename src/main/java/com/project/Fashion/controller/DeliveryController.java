@@ -1,5 +1,6 @@
 package com.project.Fashion.controller;
 
+import com.project.Fashion.dto.DeliveryRequestDto;
 import com.project.Fashion.model.Delivery;
 import com.project.Fashion.repository.DeliveryRepository;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,24 +37,28 @@ public class DeliveryController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Delivery option created successfully",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            schema = @Schema(implementation = Delivery.class))),
-            @ApiResponse(responseCode = "400", description = "Invalid input data for delivery option (e.g., missing type or cost if validated)",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"type\":\"Type cannot be blank\"}"))),
-            @ApiResponse(responseCode = "401", description = "Unauthorized (Admin token missing or invalid)"),
-            @ApiResponse(responseCode = "403", description = "Forbidden (User is not an ADMIN)")
+                            schema = @Schema(implementation = Delivery.class))), // Response is still Delivery entity
+            @ApiResponse(responseCode = "400", description = "Invalid input data for delivery option",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"type\":\"Delivery type cannot be blank\"}"))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden")
     })
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')") // Assuming only Admins can create delivery options
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Delivery> createDelivery(
             @Parameter(description = "Details of the new delivery option", required = true,
-                    content = @Content(schema = @Schema(implementation = Delivery.class)))
-            @Valid @RequestBody Delivery delivery) { // Added @Valid, assuming Delivery model might have validation
-        Delivery savedDelivery = deliveryRepository.save(delivery);
+                    content = @Content(schema = @Schema(implementation = DeliveryRequestDto.class)))
+            @Valid @RequestBody DeliveryRequestDto deliveryRequestDto) { // Use DTO for request
+        Delivery newDelivery = new Delivery();
+        newDelivery.setType(deliveryRequestDto.getType());
+        newDelivery.setDeliveryCost(deliveryRequestDto.getDeliveryCost());
+        // Assuming Delivery entity has no other required fields for creation or they have defaults.
+        Delivery savedDelivery = deliveryRepository.save(newDelivery);
         return ResponseEntity.status(HttpStatus.CREATED).body(savedDelivery);
     }
 
     @Operation(summary = "Get all available delivery options (Public)",
-            description = "Retrieves a list of all available delivery options. This is typically public information for users during checkout.")
+            description = "Retrieves a list of all available delivery options.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved all delivery options",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -70,7 +75,7 @@ public class DeliveryController {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved delivery option details",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = Delivery.class))),
-            @ApiResponse(responseCode = "404", description = "Delivery option not found with the given ID")
+            @ApiResponse(responseCode = "404", description = "Delivery option not found")
     })
     @GetMapping("/{id}")
     public ResponseEntity<Delivery> getDeliveryById(
@@ -81,7 +86,6 @@ public class DeliveryController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Consider adding PUT/DELETE for full CRUD by Admins if needed:
     @Operation(summary = "Update an existing delivery option (Admin only)",
             description = "Allows an administrator to update an existing delivery option.",
             security = @SecurityRequirement(name = "bearerAuth"))
@@ -90,19 +94,20 @@ public class DeliveryController {
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Delivery.class))),
             @ApiResponse(responseCode = "400", description = "Invalid input data"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
-            @ApiResponse(responseCode = "403", description = "Forbidden (User is not an ADMIN)"),
+            @ApiResponse(responseCode = "403", description = "Forbidden"),
             @ApiResponse(responseCode = "404", description = "Delivery option not found")
     })
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Delivery> updateDelivery(
             @Parameter(description = "ID of the delivery option to update", required = true, example = "1") @PathVariable Long id,
-            @Valid @RequestBody Delivery deliveryDetails) {
+            @Parameter(description = "Updated details for the delivery option", required = true,
+                    content = @Content(schema = @Schema(implementation = DeliveryRequestDto.class)))
+            @Valid @RequestBody DeliveryRequestDto deliveryRequestDto) { // Use DTO for request
         return deliveryRepository.findById(id)
                 .map(existingDelivery -> {
-                    existingDelivery.setType(deliveryDetails.getType());
-                    existingDelivery.setDeliveryCost(deliveryDetails.getDeliveryCost());
-                    // Add other updatable fields if any
+                    existingDelivery.setType(deliveryRequestDto.getType());
+                    existingDelivery.setDeliveryCost(deliveryRequestDto.getDeliveryCost());
                     Delivery updatedDelivery = deliveryRepository.save(existingDelivery);
                     return ResponseEntity.ok(updatedDelivery);
                 })
@@ -110,12 +115,12 @@ public class DeliveryController {
     }
 
     @Operation(summary = "Delete a delivery option (Admin only)",
-            description = "Allows an administrator to delete a delivery option. Consider implications if orders are using this delivery type.",
+            description = "Allows an administrator to delete a delivery option.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Delivery option deleted successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
-            @ApiResponse(responseCode = "403", description = "Forbidden (User is not an ADMIN)"),
+            @ApiResponse(responseCode = "403", description = "Forbidden"),
             @ApiResponse(responseCode = "404", description = "Delivery option not found")
     })
     @DeleteMapping("/{id}")
@@ -125,7 +130,6 @@ public class DeliveryController {
         if (!deliveryRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-        // Consider logic for what happens if orders are associated with this deliveryId.
         deliveryRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
