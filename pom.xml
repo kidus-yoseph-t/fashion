@@ -16,7 +16,9 @@
 		<mapstruct.version>1.5.5.Final</mapstruct.version>
 		<maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
 		<postgresql.version>42.6.0</postgresql.version>
-		<jjwt.version>0.11.5</jjwt.version> </properties>
+		<jjwt.version>0.11.5</jjwt.version>
+		<jena.version>4.10.0</jena.version> <!-- Added Jena version property -->
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springdoc</groupId>
@@ -28,7 +30,7 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
 		</dependency>
-		<dependency>
+	 	<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
@@ -121,15 +123,37 @@
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-spring-boot3</artifactId>
-			<version>2.2.0</version> </dependency>
+			<version>2.2.0</version>
+		</dependency>
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-ratelimiter</artifactId>
-			<version>2.2.0</version> </dependency>
+			<version>2.2.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-aop</artifactId>
 		</dependency>
+
+		<!-- Apache Jena Dependencies -->
+		<dependency>
+			<groupId>org.apache.jena</groupId>
+			<artifactId>jena-core</artifactId>
+			<version>${jena.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.jena</groupId>
+			<artifactId>jena-arq</artifactId> <!-- For SPARQL -->
+			<version>${jena.version}</version>
+		</dependency>
+		<!-- Optional: For Jena TDB (persistent file-based triple store) -->
+		<dependency>
+			<groupId>org.apache.jena</groupId>
+			<artifactId>jena-tdb2</artifactId>
+			<version>${jena.version}</version>
+		</dependency>
+		<!-- End Apache Jena Dependencies -->
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

@@ -1,0 +1,139 @@
+# Fashion E-Commerce Ontology (fashion.ttl)
+# Base URI: http://fashion.example.com/ontology#
+# Version: 0.2 - Updated to reflect project's data model
+
+# --- Prefixes ---
+@prefix : <http://fashion.example.com/ontology#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix schema: <http://schema.org/> . # For reusing common properties from Schema.org
+@prefix gr: <http://purl.org/goodrelations/v1#> . # GoodRelations for e-commerce concepts
+
+# --- Ontology Declaration ---
+<http://fashion.example.com/ontology> a owl:Ontology ;
+    rdfs:label "Fashion E-Commerce Ontology" ;
+    rdfs:comment "An ontology for describing products, categories, and related concepts in a fashion e-commerce platform." ;
+    owl:versionInfo "0.2" .
+
+# --- Classes ---
+
+# Core Product Class
+:FashionProduct a rdfs:Class, owl:Class ;
+    rdfs:label "Fashion Product"@en ;
+    rdfs:comment "Represents a fashion item such as clothing, footwear, or accessories."@en ;
+    rdfs:subClassOf schema:Product , gr:ProductOrService . # Inherits from Schema.org Product and GoodRelations
+
+# Category Class
+:Category a rdfs:Class, owl:Class ;
+    rdfs:label "Product Category"@en ;
+    rdfs:comment "A category for fashion products, e.g., Shirts, Trousers, Dresses."@en ;
+    rdfs:subClassOf schema:Thing .
+    # Consider schema:ProductCategory for more specific alignment.
+
+# Seller Class (linking to existing User model concept if needed)
+:Seller a rdfs:Class, owl:Class ;
+    rdfs:label "Seller"@en ;
+    rdfs:comment "An entity (individual or business) that sells fashion products."@en ;
+    rdfs:subClassOf schema:Organization , gr:BusinessEntity . # Could also be schema:Person if individuals sell.
+
+# Review Class (aligning with existing Review model)
+:ProductReview a rdfs:Class, owl:Class ;
+    rdfs:label "Product Review"@en ;
+    rdfs:comment "A review of a fashion product provided by a user."@en ;
+    rdfs:subClassOf schema:Review .
+
+
+# --- Object Properties ---
+
+:belongsToCategory a owl:ObjectProperty ;
+    rdfs:label "belongs to category"@en ;
+    rdfs:comment "Relates a fashion product to its category."@en ;
+    rdfs:domain :FashionProduct ;
+    rdfs:range :Category .
+
+:soldBy a owl:ObjectProperty ;
+    rdfs:label "sold by"@en ;
+    rdfs:comment "Relates a fashion product to its seller."@en ;
+    rdfs:domain :FashionProduct ;
+    rdfs:range :Seller . # Links to the Seller class
+
+:hasReview a owl:ObjectProperty ;
+    rdfs:label "has review"@en ;
+    rdfs:comment "Relates a fashion product to a review about it."@en ;
+    rdfs:domain :FashionProduct ;
+    rdfs:range :ProductReview .
+
+:reviewedBy a owl:ObjectProperty ;
+    rdfs:label "reviewed by"@en ;
+    rdfs:comment "Relates a product review to the user who wrote it."@en ;
+    rdfs:domain :ProductReview ;
+    rdfs:range schema:Person . # Assuming reviewers are persons (can link to User entity via URI)
+
+
+# --- Datatype Properties ---
+# :FashionProduct inherits schema:name, schema:description, schema:image, schema:sku from schema:Product.
+# :Category inherits schema:name from schema:Thing (or more specific type).
+# :ProductReview inherits schema:reviewRating, schema:reviewBody, schema:datePublished, schema:author from schema:Review.
+
+# Specific price for the product (can be complex with currency, use schema:Offer for more detail)
+:hasPrice a owl:DatatypeProperty , schema:price ; # Reusing schema:price
+    rdfs:label "has price"@en ;
+    rdfs:comment "The price of the fashion product. Assumes a single currency for simplicity here."@en ;
+    rdfs:domain :FashionProduct ;
+    rdfs:range xsd:float . # Or xsd:decimal for more precision
+
+:hasCurrency a owl:DatatypeProperty , schema:priceCurrency ; # Reusing schema:priceCurrency
+    rdfs:label "has currency"@en ;
+    rdfs:comment "The currency of the product's price (e.g., USD, EUR)."@en ;
+    rdfs:domain :FashionProduct ; # Or on an Offer class
+    rdfs:range xsd:string .
+
+# Review-specific datatype properties (if not fully covered by schema:Review properties)
+:ratingValue a owl:DatatypeProperty , schema:ratingValue ; # For the rating within a ProductReview
+    rdfs:label "rating value"@en ;
+    rdfs:domain :ProductReview ;
+    rdfs:range xsd:float . # Typically a number from 1 to 5
+
+:commentText a owl:DatatypeProperty , schema:commentText ; # For the text content of a ProductReview
+    rdfs:label "comment text"@en ;
+    rdfs:domain :ProductReview ;
+    rdfs:range xsd:string .
+
+# Product-level average rating (aligns with existing relational model)
+:averageRatingValue a owl:DatatypeProperty , schema:aggregateRating ; # schema:aggregateRating expects an AggregateRating type. For simplicity, float here.
+    rdfs:label "average rating value"@en ;
+    rdfs:comment "The overall average rating of the fashion product based on all its reviews."@en ;
+    rdfs:domain :FashionProduct ;
+    rdfs:range xsd:float .
+
+:numberOfReviews a owl:DatatypeProperty , schema:reviewCount ; # For the total number of reviews for a product
+    rdfs:label "number of reviews"@en ;
+    rdfs:comment "The total number of reviews a fashion product has received."@en ;
+    rdfs:domain :FashionProduct ;
+    rdfs:range xsd:integer .
+
+# --- Example Usage (Illustrative - to be generated from your data, reflecting removed properties) ---
+# <http://fashion.example.com/product/123> a :FashionProduct ;
+#   schema:name "Elegant Silk Scarf" ;
+#   schema:description "A luxurious 100% silk scarf, perfect for all occasions." ;
+#   :hasPrice "49.99"^^xsd:float ;
+#   :hasCurrency "USD" ;
+#   :belongsToCategory <http://fashion.example.com/category/accessories> ;
+#   :soldBy <http://fashion.example.com/seller/seller789> ;
+#   :averageRatingValue "4.7"^^xsd:float ;
+#   :numberOfReviews "25"^^xsd:integer .
+#
+# <http://fashion.example.com/category/accessories> a :Category ;
+#   schema:name "Accessories"@en .
+#
+# <http://fashion.example.com/seller/seller789> a :Seller ; # URI for your seller entity
+#  schema:name "The Boutique Seller" .
+#
+# <http://fashion.example.com/review/product123/userABC> a :ProductReview ;
+#   schema:itemReviewed <http://fashion.example.com/product/123> ;
+#   :reviewedBy <http://fashion.example.com/user/userABC> ; # URI for your user entity
+#   :ratingValue "5.0"^^xsd:float ;
+#   :commentText "Absolutely beautiful scarf, the silk is so soft!"@en ;
+#   schema:datePublished "2024-01-15T10:00:00Z"^^xsd:dateTime .

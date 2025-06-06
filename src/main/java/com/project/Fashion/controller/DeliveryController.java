@@ -1,5 +1,6 @@
 package com.project.Fashion.controller;
 
+import com.project.Fashion.dto.DeliveryRequestDto;
 import com.project.Fashion.model.Delivery;
 import com.project.Fashion.repository.DeliveryRepository;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,19 +37,23 @@ public class DeliveryController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Delivery option created successfully",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            schema = @Schema(implementation = Delivery.class))),
-            @ApiResponse(responseCode = "400", description = "Invalid input data for delivery option (e.g., missing type or cost if validated)",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"type\":\"Type cannot be blank\"}"))),
-            @ApiResponse(responseCode = "401", description = "Unauthorized (Admin token missing or invalid)"),
-            @ApiResponse(responseCode = "403", description = "Forbidden (User is not an ADMIN)")
+                            schema = @Schema(implementation = Delivery.class))), // Response is still Delivery entity
+            @ApiResponse(responseCode = "400", description = "Invalid input data for delivery option",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"type\":\"Delivery type cannot be blank\"}"))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden")
     })
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')") // Assuming only Admins can create delivery options
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Delivery> createDelivery(
             @Parameter(description = "Details of the new delivery option", required = true,
-                    content = @Content(schema = @Schema(implementation = Delivery.class)))
-            @Valid @RequestBody Delivery delivery) { // Added @Valid, assuming Delivery model might have validation
-        Delivery savedDelivery = deliveryRepository.save(delivery);
+                    content = @Content(schema = @Schema(implementation = DeliveryRequestDto.class)))
+            @Valid @RequestBody DeliveryRequestDto deliveryRequestDto) { // Use DTO for request
+        Delivery newDelivery = new Delivery();
+        newDelivery.setType(deliveryRequestDto.getType());
+        newDelivery.setDeliveryCost(deliveryRequestDto.getDeliveryCost());
+        // Assuming Delivery entity has no other required fields for creation or they have defaults.
+        Delivery savedDelivery = deliveryRepository.save(newDelivery);
         return ResponseEntity.status(HttpStatus.CREATED).body(savedDelivery);
     }
 
@@ -81,7 +86,8 @@ public class DeliveryController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Consider adding PUT/DELETE for full CRUD by Admins if needed:
+
+    // PUT/DELETE can be added for full CRUD by Admins if needed:
     @Operation(summary = "Update an existing delivery option (Admin only)",
             description = "Allows an administrator to update an existing delivery option.",
             security = @SecurityRequirement(name = "bearerAuth"))
@@ -97,12 +103,13 @@ public class DeliveryController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Delivery> updateDelivery(
             @Parameter(description = "ID of the delivery option to update", required = true, example = "1") @PathVariable Long id,
-            @Valid @RequestBody Delivery deliveryDetails) {
+            @Parameter(description = "Updated details for the delivery option", required = true,
+                    content = @Content(schema = @Schema(implementation = DeliveryRequestDto.class)))
+            @Valid @RequestBody DeliveryRequestDto deliveryRequestDto) { // Use DTO for request
         return deliveryRepository.findById(id)
                 .map(existingDelivery -> {
-                    existingDelivery.setType(deliveryDetails.getType());
-                    existingDelivery.setDeliveryCost(deliveryDetails.getDeliveryCost());
-                    // Add other updatable fields if any
+                    existingDelivery.setType(deliveryRequestDto.getType());
+                    existingDelivery.setDeliveryCost(deliveryRequestDto.getDeliveryCost());
                     Delivery updatedDelivery = deliveryRepository.save(existingDelivery);
                     return ResponseEntity.ok(updatedDelivery);
                 })
