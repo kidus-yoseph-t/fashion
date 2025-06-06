@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 @Service
@@ -56,7 +57,7 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final SparqlQueryService sparqlQueryService;
     private final RdfConfigProperties rdfConfigProperties;
-    private final RdfConversionService rdfConversionService; // Added RdfConversionService
+    private final RdfConversionService rdfConversionService;
 
     private static final String UPLOAD_DIR = "src/main/resources/static/uploads/products";
 
@@ -103,18 +104,23 @@ public class ProductService {
         }
         String sortProperty = StringUtils.hasText(sortBy) ? sortBy : "name";
         List<String> validSortProperties = List.of("name", "price", "averageRating", "id");
-        if (!validSortProperties.contains(sortProperty)) sortProperty = "name";
+        if (!validSortProperties.contains(sortProperty)) {
+            sortProperty = "name";
+        }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortProperty));
         Specification<Product> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+
             if (StringUtils.hasText(category)) predicates.add(cb.equal(cb.lower(root.get("category")), category.toLowerCase()));
+
             if (StringUtils.hasText(searchTerm)) {
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("name")), "%" + searchTerm.toLowerCase() + "%"),
                         cb.like(cb.lower(root.get("description")), "%" + searchTerm.toLowerCase() + "%")
                 ));
             }
+
             if (minPrice != null) predicates.add(cb.greaterThanOrEqualTo(root.get("price"), minPrice));
             if (maxPrice != null) predicates.add(cb.lessThanOrEqualTo(root.get("price"), maxPrice));
             if (minRating != null && minRating > 0) predicates.add(cb.greaterThanOrEqualTo(root.get("averageRating"), minRating));
@@ -151,7 +157,6 @@ public class ProductService {
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + productId + " for RDF update."));
     }
 
-
     @Caching(evict = {
             @CacheEvict(value = "productsList", allEntries = true),
             @CacheEvict(value = "productCategories", allEntries = true),
@@ -164,6 +169,13 @@ public class ProductService {
         if (!"SELLER".equalsIgnoreCase(authenticatedSeller.getRole())) {
             throw new AccessDeniedException("Only SELLERs can create products.");
         }
+        /*
+        if (productDto.getSellerId() != null && !productDto.getSellerId().equals(authenticatedSeller.getId())) {
+            log.warn("Seller ID in DTO ({}) does not match authenticated seller ID ({}). Using authenticated seller.",
+                    productDto.getSellerId(), authenticatedSeller.getId());
+        }
+        productDto.setSellerId(authenticatedSeller.getId());
+        */
         Product product = productMapper.toEntity(productDto);
         product.setSeller(authenticatedSeller);
         product.setAverageRating(0.0f);
@@ -184,7 +196,7 @@ public class ProductService {
             @CacheEvict(value = "productsList", allEntries = true),
             @CacheEvict(value = "productCategories", allEntries = true),
             @CacheEvict(value = "productPriceRange", allEntries = true),
-            @CacheEvict(value = "sellerProducts", allEntries = true)
+            @CacheEvict(value = "sellerProducts", allEntries = true) // Evict seller-specific cache
     })
     public ProductDto updateProduct(Long id, ProductDto productDto) {
         User authenticatedUser = getCurrentAuthenticatedUser();
@@ -256,8 +268,7 @@ public class ProductService {
                     (StringUtils.hasText(originalFilename) ? StringUtils.cleanPath(originalFilename).replaceAll("\\s+", "_") : "image.png");
             Path filePath = uploadPath.resolve(filename);
             Files.copy(file.getInputStream(), filePath, REPLACE_EXISTING);
-            String fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
-                    .path("/api/products/image/").path(filename).toUriString();
+            String fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath().path("/api/products/image/").path(filename).toUriString();
             product.setPhotoUrl(fileUrl);
             Product savedProduct = productRepository.save(product);
             log.info("Image for product {} added by {}. Caches evicted.", savedProduct.getId(), authSeller.getEmail());

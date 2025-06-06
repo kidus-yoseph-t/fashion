@@ -58,7 +58,7 @@ public class DeliveryController {
     }
 
     @Operation(summary = "Get all available delivery options (Public)",
-            description = "Retrieves a list of all available delivery options.")
+            description = "Retrieves a list of all available delivery options. This is typically public information for users during checkout.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved all delivery options",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -75,7 +75,7 @@ public class DeliveryController {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved delivery option details",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = Delivery.class))),
-            @ApiResponse(responseCode = "404", description = "Delivery option not found")
+            @ApiResponse(responseCode = "404", description = "Delivery option not found with the given ID")
     })
     @GetMapping("/{id}")
     public ResponseEntity<Delivery> getDeliveryById(
@@ -86,6 +86,8 @@ public class DeliveryController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+
+    // PUT/DELETE can be added for full CRUD by Admins if needed:
     @Operation(summary = "Update an existing delivery option (Admin only)",
             description = "Allows an administrator to update an existing delivery option.",
             security = @SecurityRequirement(name = "bearerAuth"))
@@ -94,7 +96,7 @@ public class DeliveryController {
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Delivery.class))),
             @ApiResponse(responseCode = "400", description = "Invalid input data"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
-            @ApiResponse(responseCode = "403", description = "Forbidden"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not an ADMIN)"),
             @ApiResponse(responseCode = "404", description = "Delivery option not found")
     })
     @PutMapping("/{id}")
@@ -115,12 +117,12 @@ public class DeliveryController {
     }
 
     @Operation(summary = "Delete a delivery option (Admin only)",
-            description = "Allows an administrator to delete a delivery option.",
+            description = "Allows an administrator to delete a delivery option. Consider implications if orders are using this delivery type.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Delivery option deleted successfully"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
-            @ApiResponse(responseCode = "403", description = "Forbidden"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not an ADMIN)"),
             @ApiResponse(responseCode = "404", description = "Delivery option not found")
     })
     @DeleteMapping("/{id}")
@@ -130,6 +132,7 @@ public class DeliveryController {
         if (!deliveryRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
+        // Consider logic for what happens if orders are associated with this deliveryId.
         deliveryRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }

@@ -45,6 +45,7 @@ public class ContactMessageController {
                     required = true,
                     content = @Content(schema = @Schema(implementation = ContactMessageRequestDto.class))) // Use DTO for schema
             @Valid @org.springframework.web.bind.annotation.RequestBody ContactMessageRequestDto messageRequestDto) { // Use DTO for request
+
         try {
             // Manually map DTO to Entity
             ContactMessage contactMessage = new ContactMessage();

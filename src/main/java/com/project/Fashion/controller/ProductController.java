@@ -74,8 +74,8 @@ public class ProductController {
     public ResponseEntity<Page<ProductDto>> getProducts(
             @Parameter(description = "Page number (0-indexed)", example = "0") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Number of items per page", example = "10") @RequestParam(defaultValue = "10") int size,
-            @Parameter(description = "Filter by product category (case-insensitive)", example = "Electronics") @RequestParam(required = false) String category,
-            @Parameter(description = "Search term for product name or description (case-insensitive)", example = "laptop") @RequestParam(required = false) String searchTerm,
+            @Parameter(description = "Filter by product category (case-insensitive)", example = "Dress") @RequestParam(required = false) String category,
+            @Parameter(description = "Search term for product name or description (case-insensitive)", example = "summer") @RequestParam(required = false) String searchTerm,
             @Parameter(description = "Minimum price filter", example = "100.00") @RequestParam(required = false) Float minPrice,
             @Parameter(description = "Maximum price filter", example = "1000.00") @RequestParam(required = false) Float maxPrice,
             @Parameter(description = "Minimum average rating filter (1-5)", example = "4.0") @RequestParam(required = false) Float minRating,
@@ -175,7 +175,6 @@ public class ProductController {
             return ResponseEntity.notFound().build();
         }
         byte[] imageBytes = Files.readAllBytes(imagePath);
-
         MediaType contentType;
         String lowerFilename = filename.toLowerCase();
         if (lowerFilename.endsWith(".png")) {
@@ -193,7 +192,7 @@ public class ProductController {
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved seller's products",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))),
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Schema should represent Page<ProductDto>
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a SELLER)")
     })
@@ -209,6 +208,8 @@ public class ProductController {
         if (sortDir.equalsIgnoreCase("DESC")) {
             direction = Sort.Direction.DESC;
         }
+      
+        // Validate sortBy field to prevent invalid sort properties
         List<String> validSortProperties = List.of("name", "price", "averageRating", "id");
         String sortProperty = validSortProperties.contains(sortBy) ? sortBy : "name";
 
@@ -221,7 +222,7 @@ public class ProductController {
             description = "Retrieves a list of all unique product category names available in the store, sorted alphabetically.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved distinct categories",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, array = @ArraySchema(schema = @Schema(type = "string", example = "Electronics"))))
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, array = @ArraySchema(schema = @Schema(type = "string", example = "Jacket"))))
     })
     @GetMapping("/categories")
     public ResponseEntity<List<String>> getDistinctCategories() {
