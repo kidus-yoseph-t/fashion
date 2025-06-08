@@ -19,8 +19,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.text.SimpleDateFormat;
-import java.util.Arrays; // Added
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+//import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -35,7 +37,7 @@ public class ReviewService {
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
 
-    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     // Define statuses that indicate a product has been effectively purchased
     private static final List<OrderStatus> PURCHASED_ORDER_STATUSES = Arrays.asList(
@@ -49,11 +51,11 @@ public class ReviewService {
     public ReviewService(ReviewRepository reviewRepository,
                          ProductRepository productRepository,
                          UserRepository userRepository,
-                         OrderRepository orderRepository) { // Added OrderRepository to constructor
+                         OrderRepository orderRepository) {
         this.reviewRepository = reviewRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
-        this.orderRepository = orderRepository; // Initialize OrderRepository
+        this.orderRepository = orderRepository;
     }
 
     private ReviewDto toDto(Review review) {
@@ -72,7 +74,8 @@ public class ReviewService {
         dto.setRating(review.getRating());
         dto.setComment(review.getComment());
         if (review.getDate() != null) {
-            dto.setDate(DATE_FORMAT.format(review.getDate()));
+            // Convert legacy java.util.Date to modern java.time.Instant before formatting
+            dto.setDate(DATE_FORMATTER.format(review.getDate().toInstant()));
         }
         return dto;
     }

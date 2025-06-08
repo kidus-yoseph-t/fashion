@@ -37,6 +37,9 @@ public class Product {
 
     private String photoUrl;
 
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private int stock;
+
     @ManyToOne
     @JoinColumn(name = "seller_id", nullable = false)
     private User seller;
@@ -47,7 +50,7 @@ public class Product {
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
     private List<Review> reviews;
 
-    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "product")    // No cascade
     private List<Order> orders;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)

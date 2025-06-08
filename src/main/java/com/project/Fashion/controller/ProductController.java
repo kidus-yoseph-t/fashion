@@ -1,7 +1,9 @@
 package com.project.Fashion.controller;
 
-import com.project.Fashion.dto.ProductDto;
+import com.project.Fashion.dto.ProductCreateDto;
+import com.project.Fashion.dto.ProductResponseDto;
 import com.project.Fashion.dto.ProductPriceRangeDto;
+import com.project.Fashion.dto.ProductUpdateDto;
 import com.project.Fashion.service.ProductService;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +21,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -48,7 +51,7 @@ public class ProductController {
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Product created successfully",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductDto.class))),
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductResponseDto.class))),
             @ApiResponse(responseCode = "400", description = "Invalid product data provided",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"name\":\"Product name cannot be blank\"}"))),
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
@@ -56,9 +59,10 @@ public class ProductController {
     })
     @PostMapping
     @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<ProductDto> createProduct(@Valid @RequestBody ProductDto productDto) {
-        ProductDto savedProductDto = productService.createProduct(productDto);
-        return ResponseEntity.ok(savedProductDto);
+    // Use ProductCreateDto for the request and ProductResponseDto for the response
+    public ResponseEntity<ProductResponseDto> createProduct(@Valid @RequestBody ProductCreateDto productCreateDto) {
+        ProductResponseDto savedProduct = productService.createProduct(productCreateDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedProduct);
     }
 
     @Operation(summary = "Get a paginated list of products (Public)",
@@ -71,7 +75,7 @@ public class ProductController {
     })
     @GetMapping
     @RateLimiter(name = "defaultApiService")
-    public ResponseEntity<Page<ProductDto>> getProducts(
+    public ResponseEntity<Page<ProductResponseDto>> getProducts(
             @Parameter(description = "Page number (0-indexed)", example = "0") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Number of items per page", example = "10") @RequestParam(defaultValue = "10") int size,
             @Parameter(description = "Filter by product category (case-insensitive)", example = "Dress") @RequestParam(required = false) String category,
@@ -81,7 +85,7 @@ public class ProductController {
             @Parameter(description = "Minimum average rating filter (1-5)", example = "4.0") @RequestParam(required = false) Float minRating,
             @Parameter(description = "Field to sort by (name, price, averageRating, id)", example = "price") @RequestParam(required = false, defaultValue = "name") String sortBy,
             @Parameter(description = "Sort direction (ASC or DESC)", example = "DESC") @RequestParam(required = false, defaultValue = "ASC") String sortDir) {
-        Page<ProductDto> productPage = productService.getAllProducts(page, size, category, searchTerm, minPrice, maxPrice, minRating, sortBy, sortDir);
+        Page<ProductResponseDto> productPage = productService.getAllProducts(page, size, category, searchTerm, minPrice, maxPrice, minRating, sortBy, sortDir);
         return ResponseEntity.ok(productPage);
     }
 
@@ -89,13 +93,13 @@ public class ProductController {
             description = "Retrieves details for a specific product by its unique ID. Available to all users.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved product details",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductDto.class))),
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductResponseDto.class))),
             @ApiResponse(responseCode = "404", description = "Product not found"),
             @ApiResponse(responseCode = "429", description = "Too many requests (Rate limit exceeded)")
     })
     @GetMapping("/{id}")
     @RateLimiter(name = "defaultApiService")
-    public ResponseEntity<ProductDto> getProduct(@Parameter(description = "ID of the product to retrieve", example = "1") @PathVariable Long id) {
+    public ResponseEntity<ProductResponseDto> getProduct(@Parameter(description = "ID of the product to retrieve", example = "1") @PathVariable Long id) {
         return ResponseEntity.ok(productService.getProductById(id));
     }
 
@@ -104,7 +108,7 @@ public class ProductController {
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Product updated successfully",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductDto.class))),
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductResponseDto.class))),
             @ApiResponse(responseCode = "400", description = "Invalid product data (e.g., negative price)"),
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a SELLER or does not own the product)"),
@@ -114,10 +118,11 @@ public class ProductController {
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('SELLER') and @productSecurity.isOwner(authentication, #id)")
     @RateLimiter(name = "defaultApiService")
-    public ResponseEntity<ProductDto> updateProduct(
+    // Use ProductUpdateDto for the request and ProductResponseDto for the response
+    public ResponseEntity<ProductResponseDto> updateProduct(
             @Parameter(description = "ID of the product to update", example = "1") @PathVariable Long id,
-            @Valid @RequestBody ProductDto productDto) {
-        ProductDto updatedProduct = productService.updateProduct(id, productDto);
+            @Valid @RequestBody ProductUpdateDto productUpdateDto) {
+        ProductResponseDto updatedProduct = productService.updateProduct(id, productUpdateDto);
         return ResponseEntity.ok(updatedProduct);
     }
 
@@ -142,7 +147,7 @@ public class ProductController {
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Image uploaded and product updated successfully",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductDto.class))),
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ProductResponseDto.class))),
             @ApiResponse(responseCode = "400", description = "No file provided or invalid file type/size"),
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a SELLER or does not own the product)"),
@@ -153,15 +158,15 @@ public class ProductController {
     @PostMapping(value = "/{id}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SELLER') and @productSecurity.isOwner(authentication, #id)")
     @RateLimiter(name = "defaultApiService")
-    public ResponseEntity<ProductDto> uploadImage(
+    public ResponseEntity<ProductResponseDto> uploadImage(
             @Parameter(description = "ID of the product for which to upload the image", example = "1") @PathVariable Long id,
             @Parameter(description = "The image file to upload (PNG, JPG/JPEG)", required = true) @RequestParam("file") MultipartFile file) {
-        ProductDto updatedProductDto = productService.addImageToProduct(id, file);
-        return ResponseEntity.ok(updatedProductDto);
+        ProductResponseDto updatedProductResponseDto = productService.addImageToProduct(id, file);
+        return ResponseEntity.ok(updatedProductResponseDto);
     }
 
     @Operation(summary = "Get a product image (Public)",
-            description = "Retrieves the image file for a product by its filename. The filename is usually part of the `photoUrl` in the ProductDto. Supports PNG and JPEG formats.")
+            description = "Retrieves the image file for a product by its filename. The filename is usually part of the `photoUrl` in the ProductResponseDto. Supports PNG and JPEG formats.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Image retrieved successfully",
                     content = {@Content(mediaType = IMAGE_PNG_VALUE), @Content(mediaType = IMAGE_JPEG_VALUE)}),
@@ -192,13 +197,13 @@ public class ProductController {
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved seller's products",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Schema should represent Page<ProductDto>
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Schema should represent Page<ProductResponseDto>
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a SELLER)")
     })
     @GetMapping("/seller/me")
     @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<Page<ProductDto>> getMyProducts(
+    public ResponseEntity<Page<ProductResponseDto>> getMyProducts(
             @Parameter(description = "Page number (0-indexed)", example = "0") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Number of items per page", example = "10") @RequestParam(defaultValue = "10") int size,
             @Parameter(description = "Field to sort by (e.g., name, price, averageRating, id). Default: name.", example = "name") @RequestParam(required = false, defaultValue = "name") String sortBy,
@@ -214,7 +219,7 @@ public class ProductController {
         String sortProperty = validSortProperties.contains(sortBy) ? sortBy : "name";
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortProperty));
-        Page<ProductDto> products = productService.getProductsByAuthenticatedSeller(pageable);
+        Page<ProductResponseDto> products = productService.getProductsByAuthenticatedSeller(pageable);
         return ResponseEntity.ok(products);
     }
 
@@ -247,12 +252,12 @@ public class ProductController {
             tags = {"Product Management", "SPARQL Queries"}) // Add to SPARQL tag as well
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved products matching semantic search",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Page<ProductDto>
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Page<ProductResponseDto>
             @ApiResponse(responseCode = "400", description = "Invalid pagination parameters or search criteria (e.g., if both category and keyword are empty and service requires at least one)"),
             @ApiResponse(responseCode = "500", description = "Error during semantic search or data retrieval")
     })
     @GetMapping("/search/semantic")
-    public ResponseEntity<Page<ProductDto>> semanticSearchProducts(
+    public ResponseEntity<Page<ProductResponseDto>> semanticSearchProducts(
             @Parameter(description = "Optional category name to filter by (case-insensitive)", example = "Shirts") @RequestParam(required = false) String categoryName,
             @Parameter(description = "Optional keyword to search in product descriptions (case-insensitive)", example = "cotton") @RequestParam(required = false) String descriptionKeyword,
             @Parameter(description = "Page number (0-indexed)", example = "0") @RequestParam(defaultValue = "0") int page,
@@ -276,7 +281,7 @@ public class ProductController {
 
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortProperty));
-        Page<ProductDto> results = productService.findProductsBySemanticSearch(categoryName, descriptionKeyword, pageable);
+        Page<ProductResponseDto> results = productService.findProductsBySemanticSearch(categoryName, descriptionKeyword, pageable);
         return ResponseEntity.ok(results);
     }
 }

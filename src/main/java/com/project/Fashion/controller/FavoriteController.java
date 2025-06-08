@@ -1,6 +1,6 @@
 package com.project.Fashion.controller;
 
-import com.project.Fashion.dto.ProductDto;
+import com.project.Fashion.dto.ProductResponseDto;
 import com.project.Fashion.model.User;
 import com.project.Fashion.repository.UserRepository;
 import com.project.Fashion.service.FavoriteService;
@@ -59,16 +59,16 @@ public class FavoriteController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved favorite products",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            array = @ArraySchema(schema = @Schema(implementation = ProductDto.class)))),
+                            array = @ArraySchema(schema = @Schema(implementation = ProductResponseDto.class)))),
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a BUYER)"),
             @ApiResponse(responseCode = "404", description = "Authenticated user not found (should not happen if token is valid and user exists)")
     })
     @GetMapping
     @PreAuthorize("hasRole('BUYER')")
-    public ResponseEntity<List<ProductDto>> getMyFavorites() {
+    public ResponseEntity<List<ProductResponseDto>> getMyFavorites() {
         String userId = getAuthenticatedUserId();
-        List<ProductDto> favoriteProducts = favoriteService.getFavoriteProductsByUserId(userId);
+        List<ProductResponseDto> favoriteProducts = favoriteService.getFavoriteProductsByUserId(userId);
         return ResponseEntity.ok(favoriteProducts);
     }
 

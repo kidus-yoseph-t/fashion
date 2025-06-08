@@ -17,7 +17,7 @@ import com.project.Fashion.exception.exceptions.DeliveryNotFoundException;
 
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter; // Import Parameter
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -42,7 +42,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping(path = "/api/orders")
@@ -99,9 +98,8 @@ public class OrderController {
         if (!authenticatedUser.getId().equals(request.getUser())) {
             throw new AccessDeniedException("User can only create orders for themselves.");
         }
-        Order order = orderService.createOrderFromDto(request);
-        OrderResponseDto responseDto = orderService.convertToDto(order);
-        return ResponseEntity.ok(responseDto);
+        OrderResponseDto createdOrder = orderService.createOrderFromDto(request);
+        return ResponseEntity.ok(createdOrder);
     }
 
     @Operation(summary = "Get all orders (Admin only)",
@@ -116,11 +114,27 @@ public class OrderController {
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<OrderResponseDto>> getAllOrders() {
-        List<Order> orders = orderService.getAllOrders();
-        List<OrderResponseDto> responseDtos = orders.stream()
-                .map(orderService::convertToDto)
-                .collect(Collectors.toList());
+        List<OrderResponseDto> responseDtos = orderService.getAllOrders();
         return ResponseEntity.ok(responseDtos);
+    }
+
+    // --- METHOD 1: NEW ENDPOINT ADDED FOR BUYER DASHBOARD ---
+    @Operation(summary = "Get orders for the authenticated buyer (Buyer only)",
+            description = "Retrieves a paginated list of orders for the currently authenticated BUYER.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved buyer's orders",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid pagination/sort parameters"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not a BUYER)")
+    })
+    @GetMapping("/user/me")
+    @PreAuthorize("hasRole('BUYER')")
+    public ResponseEntity<Page<OrderResponseDto>> getMyOrders(Pageable pageable) {
+        User authenticatedUser = getAuthenticatedUserFromSecurityContext();
+        Page<OrderResponseDto> orders = orderService.getOrdersByUserId(authenticatedUser.getId(), pageable);
+        return ResponseEntity.ok(orders);
     }
 
     @Operation(summary = "Get orders for the authenticated seller (Seller only)",
@@ -134,22 +148,7 @@ public class OrderController {
     })
     @GetMapping("/seller/me")
     @PreAuthorize("hasRole('SELLER')")
-    public ResponseEntity<Page<OrderResponseDto>> getMyOrdersAsSeller(
-            @Parameter(description = "Page number (0-indexed)", example = "0") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Number of items per page", example = "10") @RequestParam(defaultValue = "10") int size,
-            @Parameter(description = "Field to sort by (e.g., date, total, status). Default: date.", example = "date") @RequestParam(required = false, defaultValue = "date") String sortBy,
-            @Parameter(description = "Sort direction (ASC or DESC). Default: DESC for date.", example = "DESC") @RequestParam(required = false, defaultValue = "DESC") String sortDir
-    ) {
-        Sort.Direction direction = Sort.Direction.ASC;
-        if (sortDir.equalsIgnoreCase("DESC")) {
-            direction = Sort.Direction.DESC;
-        }
-        // Validate sortBy field for orders (e.g., "date", "total", "status", "product.name")
-        // For simplicity, allowing common fields. Add more robust validation if needed.
-        List<String> validSortProperties = List.of("date", "total", "status", "id", "quantity", "product.name", "user.email");
-        String sortProperty = validSortProperties.contains(sortBy) ? sortBy : "date"; // Default sort for orders is usually date
-
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortProperty));
+    public ResponseEntity<Page<OrderResponseDto>> getMyOrdersAsSeller(Pageable pageable) {
         Page<OrderResponseDto> orders = orderService.getOrdersForAuthenticatedSeller(pageable);
         return ResponseEntity.ok(orders);
     }
@@ -168,10 +167,11 @@ public class OrderController {
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUYER', 'SELLER')")
     public ResponseEntity<OrderResponseDto> getOrder(@PathVariable Long id) {
+        OrderResponseDto orderDto = orderService.getOrderById(id);
         User authenticatedUser = getAuthenticatedUserFromSecurityContext();
+        String userRole = authenticatedUser.getRole().toUpperCase();
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
-        String userRole = authenticatedUser.getRole().toUpperCase();
 
         switch (userRole) {
             case "ADMIN": break;
@@ -190,31 +190,31 @@ public class OrderController {
             default:
                 throw new AccessDeniedException("User role not recognized for accessing orders.");
         }
-        return ResponseEntity.ok(orderService.convertToDto(order));
+        return ResponseEntity.ok(orderDto);
     }
 
+    // --- METHOD 2: FIXED THE COMPILATION ERROR ---
     @Operation(summary = "Get orders for a specific user (Admin or Buyer)",
-            description = "Retrieves all orders for a given user ID. ADMINs can view orders for any user. BUYERs can only view their own orders.",
+            description = "Retrieves a paginated list of orders for a given user ID. ADMINs can view orders for any user. BUYERs can only view their own orders.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved user's orders",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, array = @ArraySchema(schema = @Schema(implementation = OrderResponseDto.class)))),
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Changed to Page
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden"),
             @ApiResponse(responseCode = "404", description = "User not found")
     })
     @GetMapping("/user/{userId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUYER')")
-    public ResponseEntity<List<OrderResponseDto>> getOrdersByUserId(@PathVariable String userId) {
+    // Changed signature to accept Pageable and return a Page
+    public ResponseEntity<Page<OrderResponseDto>> getOrdersByUserId(@PathVariable String userId, Pageable pageable) {
         User authenticatedUser = getAuthenticatedUserFromSecurityContext();
         String userRole = authenticatedUser.getRole().toUpperCase();
         if ("BUYER".equals(userRole) && !authenticatedUser.getId().equals(userId)) {
             throw new AccessDeniedException("Buyers can only view their own list of orders.");
         }
-        List<Order> userOrders = orderService.getOrdersByUserId(userId);
-        List<OrderResponseDto> responseDtos = userOrders.stream()
-                .map(orderService::convertToDto)
-                .collect(Collectors.toList());
+        // Call the service method with both arguments to fix the error
+        Page<OrderResponseDto> responseDtos = orderService.getOrdersByUserId(userId, pageable);
         return ResponseEntity.ok(responseDtos);
     }
 
@@ -233,22 +233,8 @@ public class OrderController {
     @PreAuthorize("hasRole('ADMIN')")
     @RateLimiter(name = "defaultApiService")
     public ResponseEntity<OrderResponseDto> updateOrder(@PathVariable Long id, @Valid @RequestBody OrderRequestDto orderRequestDto) {
-        Order existingOrder = orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
-        User orderUser = userRepository.findById(orderRequestDto.getUser())
-                .orElseThrow(() -> new UserNotFoundException("User for order not found: " + orderRequestDto.getUser()));
-        Product orderProduct = productRepository.findById(orderRequestDto.getProduct())
-                .orElseThrow(() -> new ProductNotFoundException("Product for order not found: " + orderRequestDto.getProduct()));
-        Delivery orderDelivery = deliveryRepository.findById(orderRequestDto.getDelivery())
-                .orElseThrow(() -> new DeliveryNotFoundException("Delivery for order not found: " + orderRequestDto.getDelivery()));
-        existingOrder.setUser(orderUser);
-        existingOrder.setProduct(orderProduct);
-        existingOrder.setDate(orderRequestDto.getDate());
-        existingOrder.setQuantity(orderRequestDto.getQuantity());
-        existingOrder.setTotal(orderRequestDto.getTotal());
-        existingOrder.setDelivery(orderDelivery);
-        Order updatedOrder = orderService.updateOrder(id, existingOrder);
-        return ResponseEntity.ok(orderService.convertToDto(updatedOrder));
+        OrderResponseDto updatedOrder = orderService.updateOrder(id, orderRequestDto);
+        return ResponseEntity.ok(updatedOrder);
     }
 
     @Operation(summary = "Partially update an order (Admin or Seller)",
@@ -288,8 +274,8 @@ public class OrderController {
                 catch (IllegalArgumentException e) { throw new InvalidFieldException("Invalid order status value: " + statusValue); }
             }
         }
-        Order patchedOrder = orderService.patchOrder(id, updates);
-        return ResponseEntity.ok(orderService.convertToDto(patchedOrder));
+        OrderResponseDto patchedOrder = orderService.patchOrder(id, updates);
+        return ResponseEntity.ok(patchedOrder);
     }
 
     @Operation(summary = "Delete an order (Admin only)",
@@ -326,10 +312,7 @@ public class OrderController {
         if (!authenticatedUser.getId().equals(request.getUserId())) {
             throw new AccessDeniedException("User can only checkout their own cart.");
         }
-        List<Order> orders = orderService.checkout(request.getUserId(), request.getDeliveryId());
-        List<OrderResponseDto> responseDtos = orders.stream()
-                .map(orderService::convertToDto)
-                .collect(Collectors.toList());
+        List<OrderResponseDto> responseDtos = orderService.checkout(request.getUserId(), request.getDeliveryId());
         return ResponseEntity.ok(responseDtos);
     }
 }

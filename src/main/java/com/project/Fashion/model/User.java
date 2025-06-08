@@ -36,7 +36,7 @@ public class User {
     @Column(nullable = false)
     private String role;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "user")   // No cascade
     @JsonManagedReference
     private List<Order> orders;
 

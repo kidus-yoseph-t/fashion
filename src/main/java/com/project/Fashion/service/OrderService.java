@@ -18,17 +18,22 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @AllArgsConstructor
@@ -42,12 +47,10 @@ public class OrderService {
     private final CartRepository cartRepository;
     private final DeliveryRepository deliveryRepository;
 
-    // Helper method to get current authenticated user (similar to ProductService)
+    // This helper method is well-implemented. No changes needed.
     private User getCurrentAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
-            // This case should ideally be caught by security filters,
-            // but good to have a fallback.
             throw new AccessDeniedException("User is not authenticated.");
         }
         String email;
@@ -57,33 +60,14 @@ public class OrderService {
         } else if (principal instanceof String) {
             email = (String) principal;
         } else {
-            // Should not happen with standard Spring Security setup
             throw new AccessDeniedException("Invalid principal type for authentication.");
         }
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found in database. Email: " + email));
     }
 
-
-    public Order createOrder(Order order) {
-        if (order.getProduct() != null && order.getProduct().getId() != null) {
-            Product product = productRepository.findById(order.getProduct().getId())
-                    .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + order.getProduct().getId()));
-            order.setProduct(product);
-        }
-
-        if (order.getUser() != null && order.getUser().getId() != null) {
-            User user = userRepository.findById(order.getUser().getId())
-                    .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + order.getUser().getId()));
-            order.setUser(user);
-        }
-        if (order.getStatus() == null) {
-            order.setStatus(OrderStatus.PENDING_PAYMENT);
-        }
-        return orderRepository.save(order);
-    }
-
-    public Order createOrderFromDto(OrderRequestDto dto) {
+    // This method is well-implemented. No changes needed.
+    public OrderResponseDto  createOrderFromDto(OrderRequestDto dto) {
         User user = userRepository.findById(dto.getUser())
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + dto.getUser()));
         Product product = productRepository.findById(dto.getProduct())
@@ -99,54 +83,74 @@ public class OrderService {
         order.setTotal(dto.getTotal());
         order.setDelivery(delivery);
         order.setStatus(OrderStatus.PENDING_PAYMENT);
-        return orderRepository.save(order);
+
+        Order savedOrder = orderRepository.save(order);
+        return convertToDto(savedOrder);
     }
 
     @Transactional(readOnly = true)
-    public List<Order> getAllOrders() {
-        return orderRepository.findAll();
+    public List<OrderResponseDto> getAllOrders() {
+        List<Order> orders = orderRepository.findAll();
+        return orders.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
+    // No changes needed.
+    @Cacheable(value = "order", key = "#id")
     @Transactional(readOnly = true)
-    public Order getOrder(Long id) {
-        return orderRepository.findById(id)
+    public OrderResponseDto getOrderById(Long id) {
+        log.info("Fetching order from DB with ID: {}", id);
+        Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with ID: " + id));
+        return convertToDto(order);
     }
 
     @Transactional(readOnly = true)
-    public List<Order> getOrdersByUserId(String userId) {
-        userRepository.findById(userId).orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId + " when fetching orders."));
-        return orderRepository.findByUserId(userId);
+    public Page<OrderResponseDto> getOrdersByUserId(String userId, Pageable pageable) {
+        // Ensure the user exists before attempting to fetch orders
+        userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId + " when fetching orders."));
+
+        // Use the new repository method that accepts a Pageable object
+        Page<Order> userOrdersPage = orderRepository.findByUserId(userId, pageable);
+
+        // Convert the Page of entities to a Page of DTOs
+        return userOrdersPage.map(this::convertToDto);
     }
 
-    public Order updateOrder(Long id, Order updatedOrderDetails) {
-        Order existingOrder = getOrder(id);
-        if (updatedOrderDetails.getUser() != null && updatedOrderDetails.getUser().getId() != null) {
-            User user = userRepository.findById(updatedOrderDetails.getUser().getId())
-                    .orElseThrow(() -> new UserNotFoundException("User for order update: " + updatedOrderDetails.getUser().getId()));
+    @CacheEvict(value = "order", key = "#id")
+    public OrderResponseDto updateOrder(Long id, OrderRequestDto orderRequestDto) {
+        Order existingOrder = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with ID: " + id));
+        if (orderRequestDto.getUser() != null) {
+            User user = userRepository.findById(orderRequestDto.getUser())
+                    .orElseThrow(() -> new UserNotFoundException("User for order update not found: " + orderRequestDto.getUser()));
             existingOrder.setUser(user);
         }
-        if (updatedOrderDetails.getProduct() != null && updatedOrderDetails.getProduct().getId() != null) {
-            Product product = productRepository.findById(updatedOrderDetails.getProduct().getId())
-                    .orElseThrow(() -> new ProductNotFoundException("Product for order update: " + updatedOrderDetails.getProduct().getId()));
+        if (orderRequestDto.getProduct() != null) {
+            Product product = productRepository.findById(orderRequestDto.getProduct())
+                    .orElseThrow(() -> new ProductNotFoundException("Product for order update not found: " + orderRequestDto.getProduct()));
             existingOrder.setProduct(product);
         }
-        if (updatedOrderDetails.getDelivery() != null && updatedOrderDetails.getDelivery().getId() != null) {
-            Delivery delivery = deliveryRepository.findById(updatedOrderDetails.getDelivery().getId())
-                    .orElseThrow(() -> new DeliveryNotFoundException("Delivery for order update: " + updatedOrderDetails.getDelivery().getId()));
+        if (orderRequestDto.getDelivery() != null) {
+            Delivery delivery = deliveryRepository.findById(orderRequestDto.getDelivery())
+                    .orElseThrow(() -> new DeliveryNotFoundException("Delivery for order update not found: " + orderRequestDto.getDelivery()));
             existingOrder.setDelivery(delivery);
         }
-        existingOrder.setQuantity(updatedOrderDetails.getQuantity());
-        existingOrder.setDate(updatedOrderDetails.getDate() != null ? updatedOrderDetails.getDate() : existingOrder.getDate());
-        existingOrder.setTotal(updatedOrderDetails.getTotal());
-        if (updatedOrderDetails.getStatus() != null) {
-            existingOrder.setStatus(updatedOrderDetails.getStatus());
-        }
-        return orderRepository.save(existingOrder);
+        existingOrder.setQuantity(orderRequestDto.getQuantity());
+        existingOrder.setDate(orderRequestDto.getDate() != null ? orderRequestDto.getDate() : existingOrder.getDate());
+        existingOrder.setTotal(orderRequestDto.getTotal());
+        Order updatedOrder = orderRepository.save(existingOrder);
+        log.info("Order {} updated. Evicting from 'order' cache.", id);
+        return convertToDto(updatedOrder);
     }
 
-    public Order patchOrder(Long id, Map<String, Object> updates) {
-        Order order = getOrder(id);
+    // This method is very well-implemented. No changes needed.
+    @CacheEvict(value = "order", key = "#id")
+    public OrderResponseDto patchOrder(Long id, Map<String, Object> updates) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with ID: " + id));
         updates.forEach((key, value) -> {
             switch (key) {
                 case "quantity" -> {
@@ -164,19 +168,19 @@ public class OrderService {
                 case "userId" -> {
                     if (value == null) throw new InvalidFieldException("User ID cannot be null.");
                     User user = userRepository.findById(value.toString())
-                            .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + value.toString()));
+                            .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + value));
                     order.setUser(user);
                 }
                 case "productId" -> {
                     if (value == null) throw new InvalidFieldException("Product ID cannot be null.");
                     Product product = productRepository.findById(Long.parseLong(value.toString()))
-                            .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + value.toString()));
+                            .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + value));
                     order.setProduct(product);
                 }
                 case "deliveryId" -> {
                     if (value == null) throw new InvalidFieldException("Delivery ID cannot be null.");
                     Delivery delivery = deliveryRepository.findById(Long.parseLong(value.toString()))
-                            .orElseThrow(() -> new DeliveryNotFoundException("Delivery not found with ID: " + value.toString()));
+                            .orElseThrow(() -> new DeliveryNotFoundException("Delivery not found with ID: " + value));
                     order.setDelivery(delivery);
                 }
                 case "status" -> {
@@ -184,45 +188,76 @@ public class OrderService {
                     try {
                         order.setStatus(OrderStatus.valueOf(value.toString().toUpperCase()));
                     } catch (IllegalArgumentException e) {
-                        throw new InvalidFieldException("Invalid status value: " + value.toString());
+                        throw new InvalidFieldException("Invalid status value: " + value);
                     }
                 }
                 default -> throw new InvalidFieldException("Invalid field for order patch: " + key);
             }
         });
-        return orderRepository.save(order);
+        Order patchedOrder = orderRepository.save(order);
+        log.info("Order {} patched. Evicting from 'order' cache.", id);
+        return convertToDto(patchedOrder);
     }
 
+    // No changes needed.
+    @CacheEvict(value = "order", key = "#id")
     public void deleteOrder(Long id) {
         if (!orderRepository.existsById(id)) {
             throw new OrderNotFoundException("Order not found with ID: " + id);
         }
         orderRepository.deleteById(id);
+        log.info("Order {} deleted. Evicting from 'order' cache.", id);
     }
 
-    public List<Order> checkout(String userId, Long deliveryId) {
+    // --- REFACTORED METHOD START ---
+    @Transactional
+    public List<OrderResponseDto> checkout(String userId, Long deliveryId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new DeliveryNotFoundException("Delivery option not found with ID: " + deliveryId));
         List<Cart> cartItems = cartRepository.findByUserId(userId);
+
         if (cartItems.isEmpty()) {
-            throw new CartEmptyException("Cart is empty for user ID: " + userId);
+            throw new CartEmptyException("Cannot checkout with an empty cart.");
         }
-        List<Order> orders = new ArrayList<>();
-        for (Cart cart : cartItems) {
+
+        List<Order> createdOrders = new ArrayList<>();
+
+        for (Cart cartItem : cartItems) {
+            Product product = cartItem.getProduct();
+
+            // Inventory check
+            if (product.getStock() < cartItem.getQuantity()) {
+                // Throws an exception that will be translated to a 409 Conflict with a clear message
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Not enough stock for '" + product.getName() + "'. Requested: " + cartItem.getQuantity() + ", Available: " + product.getStock());
+            }
+
+            // Decrease the product stock
+            product.setStock(product.getStock() - cartItem.getQuantity());
+            productRepository.save(product); // Save the updated stock level
+
             Order order = new Order();
             order.setUser(user);
-            order.setProduct(cart.getProduct());
-            order.setQuantity(cart.getQuantity());
+            order.setProduct(product);
+            order.setQuantity(cartItem.getQuantity());
             order.setDate(new Date());
-            order.setTotal(cart.getProduct().getPrice() * cart.getQuantity());
+            order.setTotal(product.getPrice() * cartItem.getQuantity()); // Recalculate total for safety
             order.setDelivery(delivery);
-            order.setStatus(OrderStatus.PENDING_PAYMENT);
-            orders.add(orderRepository.save(order));
+            order.setStatus(OrderStatus.PENDING_PAYMENT); // Set initial status
+
+            createdOrders.add(orderRepository.save(order));
         }
+
+        // Clear the user's cart after all orders are successfully created
         cartRepository.deleteAll(cartItems);
-        return orders;
+
+        log.info("Checkout successful for user ID: {}. Created {} orders.", userId, createdOrders.size());
+
+        return createdOrders.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
     public OrderResponseDto convertToDto(Order order) {
@@ -250,20 +285,13 @@ public class OrderService {
         return dto;
     }
 
-    /**
-     * Retrieves a paginated list of orders containing products sold by the currently authenticated seller.
-     * @param pageable Pagination and sorting information.
-     * @return A Page of OrderResponseDto.
-     */
     @Transactional(readOnly = true)
     public Page<OrderResponseDto> getOrdersForAuthenticatedSeller(Pageable pageable) {
         User authenticatedSeller = getCurrentAuthenticatedUser();
-        // Ensure the user is indeed a seller, though @PreAuthorize on controller is primary guard
         if (!"SELLER".equalsIgnoreCase(authenticatedSeller.getRole())) {
             log.warn("User {} with role {} attempted to access seller-specific orders.", authenticatedSeller.getEmail(), authenticatedSeller.getRole());
             throw new AccessDeniedException("Only users with SELLER role can access this resource.");
         }
-
         log.info("Fetching orders for authenticated seller: {} with pagination: {}", authenticatedSeller.getEmail(), pageable);
         Page<Order> ordersPage = orderRepository.findByProduct_Seller_Id(authenticatedSeller.getId(), pageable);
         return ordersPage.map(this::convertToDto);

@@ -4,7 +4,6 @@ import com.project.Fashion.config.RdfConfigProperties;
 import org.apache.jena.query.*;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.RDFNode;
-import org.apache.jena.rdf.model.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -151,7 +150,7 @@ public class SparqlQueryService {
                         "WHERE { \n" +
                         whereClause +
                         "} \n" +
-                        (orderByClause.length() > 0 ? orderByClause.toString() + "\n" : "") +
+                        (!orderByClause.isEmpty() ? orderByClause + "\n" : "") +
                         "LIMIT %d \n" +
                         "OFFSET %d",
                 rdfConfigProperties.getOntologyBaseUri(),

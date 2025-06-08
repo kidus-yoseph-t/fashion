@@ -15,6 +15,9 @@ import com.project.Fashion.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -127,7 +130,10 @@ public class UserService {
         return userRepository.findAll().stream().map(userMapper::toDto).toList();
     }
 
+    // The method will only be executed if the cache doesn't have a value for this key.
+    @Cacheable(value = "user", key = "#id")
     public UserDto getUser(String id) {
+        logger.info("Fetching user from DB with id: {}", id); // This will only log on a cache miss
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
         return userMapper.toDto(user);
@@ -144,6 +150,7 @@ public class UserService {
     }
 
     @Transactional
+    @CacheEvict(value = "user", key = "#authenticatedUserId")
     public UserDto updateSelfProfile(String authenticatedUserId, UserProfileUpdateDto dto) {
         User currentUser = userRepository.findById(authenticatedUserId)
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found with ID: " + authenticatedUserId));
@@ -172,10 +179,12 @@ public class UserService {
         } else {
             logger.info("No changes detected for user profile update for user ID: {}", authenticatedUserId);
         }
+        logger.info("User profile for {} updated. Evicting from 'user' cache.", authenticatedUserId);
         return userMapper.toDto(currentUser);
     }
 
     @Transactional
+    @CacheEvict(value = "user", key = "#id")
     public UserDto updateUser(String id, UserSignUpDto updatedDto) {
         User existingUser = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
@@ -215,11 +224,16 @@ public class UserService {
             existingUser.setPassword(passwordEncoder.encode(updatedDto.getPassword()));
         }
         userRepository.save(existingUser);
-
+        logger.info("User {} updated. Evicting from 'user' cache.", id);
         return userMapper.toDto(existingUser);
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "user", key = "#id"),
+            @CacheEvict(value = "user", key = "#result.email") // Evicts the new email key
+            // To evict the old email key, you'd need to fetch the user first, which you already do.
+    })
     public UserDto patchUser(String id, Map<String, Object> updates) {
         User userToUpdate = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
@@ -279,18 +293,24 @@ public class UserService {
         });
 
         userRepository.save(userToUpdate);
+        logger.info("User {} patched. Evicting from 'user' cache.", id);
         return userMapper.toDto(userToUpdate);
     }
 
     @Transactional
+    @CacheEvict(value = "user", key = "#id")
     public void deleteUser(String id) {
         if (!userRepository.existsById(id)) {
             throw new UserNotFoundException("User not found with id: " + id);
         }
         userRepository.deleteById(id);
+        logger.info("User {} deleted. Evicting from 'user' cache.", id);
     }
 
+    // This method also fetches a user, so we can cache its result too.
+    @Cacheable(value = "user", key = "#email")
     public UserDto findUserDtoByEmail(String email) {
+        logger.info("Fetching user from DB with email: {}", email); // This will only log on a cache miss
         return userRepository.findByEmail(email)
                 .map(userMapper::toDto)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));

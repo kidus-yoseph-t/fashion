@@ -1,7 +1,7 @@
 package com.project.Fashion.service;
 
-import com.project.Fashion.dto.ProductDto; // Assuming you want to return ProductDto for favorites
-import com.project.Fashion.config.mappers.ProductMapper; // To map Product to ProductDto
+import com.project.Fashion.dto.ProductResponseDto;
+import com.project.Fashion.config.mappers.ProductMapper;
 import com.project.Fashion.exception.exceptions.ProductNotFoundException;
 import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.model.Product;
@@ -27,7 +27,7 @@ public class FavoriteService {
     private final UserFavoriteRepository userFavoriteRepository;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
-    private final ProductMapper productMapper; // To convert Product entities to ProductDtos
+    private final ProductMapper productMapper;
 
     @Autowired
     public FavoriteService(UserFavoriteRepository userFavoriteRepository,
@@ -83,14 +83,14 @@ public class FavoriteService {
     }
 
     @Transactional(readOnly = true) // readOnly for query methods
-    public List<ProductDto> getFavoriteProductsByUserId(String userId) {
+    public List<ProductResponseDto> getFavoriteProductsByUserId(String userId) {
         if (!userRepository.existsById(userId)) {
             throw new UserNotFoundException("User not found with ID: " + userId);
         }
         List<UserFavorite> favorites = userFavoriteRepository.findByUserId(userId);
         return favorites.stream()
                 .map(UserFavorite::getProduct) // Get the Product entity from each UserFavorite
-                .map(productMapper::toDto)     // Convert Product entity to ProductDto
+                .map(productMapper::toProductResponseDto)
                 .collect(Collectors.toList());
     }
 
