@@ -52,7 +52,8 @@ public class DeliveryController {
         Delivery newDelivery = new Delivery();
         newDelivery.setType(deliveryRequestDto.getType());
         newDelivery.setDeliveryCost(deliveryRequestDto.getDeliveryCost());
-        // Assuming Delivery entity has no other required fields for creation or they have defaults.
+        newDelivery.setMinDeliveryDays(deliveryRequestDto.getMinDeliveryDays());
+        newDelivery.setMaxDeliveryDays(deliveryRequestDto.getMaxDeliveryDays());
         Delivery savedDelivery = deliveryRepository.save(newDelivery);
         return ResponseEntity.status(HttpStatus.CREATED).body(savedDelivery);
     }
@@ -110,6 +111,8 @@ public class DeliveryController {
                 .map(existingDelivery -> {
                     existingDelivery.setType(deliveryRequestDto.getType());
                     existingDelivery.setDeliveryCost(deliveryRequestDto.getDeliveryCost());
+                    existingDelivery.setMinDeliveryDays(deliveryRequestDto.getMinDeliveryDays());
+                    existingDelivery.setMaxDeliveryDays(deliveryRequestDto.getMaxDeliveryDays());
                     Delivery updatedDelivery = deliveryRepository.save(existingDelivery);
                     return ResponseEntity.ok(updatedDelivery);
                 })

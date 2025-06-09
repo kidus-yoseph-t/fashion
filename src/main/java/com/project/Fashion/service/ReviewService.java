@@ -16,12 +16,14 @@ import com.project.Fashion.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-//import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -39,7 +41,6 @@ public class ReviewService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
-    // Define statuses that indicate a product has been effectively purchased
     private static final List<OrderStatus> PURCHASED_ORDER_STATUSES = Arrays.asList(
             OrderStatus.PAID,
             OrderStatus.PROCESSING,
@@ -58,36 +59,51 @@ public class ReviewService {
         this.orderRepository = orderRepository;
     }
 
+    private User getAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
+            throw new AccessDeniedException("User is not authenticated.");
+        }
+        String currentPrincipalName = authentication.getName(); // Email
+        return userRepository.findByEmail(currentPrincipalName)
+                .orElseThrow(() -> new UserNotFoundException("Authenticated user not found with email: " + currentPrincipalName));
+    }
+
     private ReviewDto toDto(Review review) {
         if (review == null) return null;
         ReviewDto dto = new ReviewDto();
         dto.setId(review.getId());
         if (review.getProduct() != null) {
             dto.setProductId(review.getProduct().getId());
+            dto.setProductName(review.getProduct().getName()); // Populate the product name
         }
         if (review.getUser() != null) {
             dto.setUserId(review.getUser().getId());
             dto.setUserName(review.getUser().getFirstName() + " " + review.getUser().getLastName());
         } else {
-            dto.setUserName("Anonymous"); // Should ideally not happen if user is required
+            dto.setUserName("Anonymous");
         }
         dto.setRating(review.getRating());
         dto.setComment(review.getComment());
         if (review.getDate() != null) {
-            // Convert legacy java.util.Date to modern java.time.Instant before formatting
             dto.setDate(DATE_FORMATTER.format(review.getDate().toInstant()));
         }
         return dto;
     }
 
     @Transactional(readOnly = true)
+    public List<ReviewDto> getReviewsByAuthenticatedUser() {
+        User user = getAuthenticatedUser();
+        logger.info("Fetching all reviews for authenticated user: {}", user.getEmail());
+        List<Review> reviews = reviewRepository.findByUserId(user.getId());
+        return reviews.stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public List<ReviewDto> getReviewsByProduct(Long productId) {
-        // Check if product exists before attempting to fetch reviews
         if (!productRepository.existsById(productId)) {
             logger.info("No product found with ID {} when fetching reviews. Returning empty list.", productId);
-            // Optionally, throw ProductNotFoundException if strict behavior is desired
-            // throw new ProductNotFoundException("Product not found with ID: " + productId);
-            return List.of(); // Return empty list if product doesn't exist
+            return List.of();
         }
         return reviewRepository.findByProductId(productId)
                 .stream().map(this::toDto)
@@ -98,38 +114,26 @@ public class ReviewService {
     public ReviewDto addReview(Long productId, String userId, ReviewDto reviewDto) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with ID: " + productId + ". Cannot add review."));
-
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId + ". Cannot add review."));
-
-        // Check if the user has purchased this product
         List<Order> qualifyingOrders = orderRepository.findOrdersByUserProductAndStatuses(userId, productId, PURCHASED_ORDER_STATUSES);
         if (qualifyingOrders.isEmpty()) {
             logger.warn("User {} attempted to review product {} without a qualifying purchase.", userId, productId);
             throw new IllegalStateException("You can only review products you have purchased and received/paid for.");
         }
-
-        // Optional: Check if this user has already reviewed this product to prevent multiple reviews
-        // You would need a method like `existsByProductIdAndUserId` in ReviewRepository
         if (reviewRepository.existsByProductIdAndUserId(productId, userId)) {
             logger.warn("User {} attempted to review product {} again.", userId, productId);
             throw new IllegalStateException("You have already reviewed this product.");
         }
-
-
         Review review = new Review();
         review.setProduct(product);
         review.setUser(user);
         review.setRating(reviewDto.getRating());
         review.setComment(reviewDto.getComment());
-        review.setDate(new Date()); // Set current date for the review
-
+        review.setDate(new Date());
         Review savedReview = reviewRepository.save(review);
         logger.info("Review ID {} added by user {} for product {}", savedReview.getId(), userId, productId);
-
-        // Update product's average rating and number of reviews
         updateProductRatingStats(productId);
-
         return toDto(savedReview);
     }
 
@@ -137,13 +141,9 @@ public class ReviewService {
     public void deleteReview(Long reviewId) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new ReviewNotFoundException("Review not found with ID: " + reviewId));
-
-        Long productId = review.getProduct().getId(); // Get productId before deleting the review
-
+        Long productId = review.getProduct().getId();
         reviewRepository.deleteById(reviewId);
         logger.info("Review ID {} deleted by user (or admin) for product {}", reviewId, productId);
-
-        // Update product's average rating and number of reviews
         updateProductRatingStats(productId);
     }
 
@@ -151,37 +151,21 @@ public class ReviewService {
     public ReviewDto updateReview(Long reviewId, ReviewDto reviewDto) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new ReviewNotFoundException("Review not found with ID: " + reviewId));
-
-        // Update review fields
         review.setRating(reviewDto.getRating());
         review.setComment(reviewDto.getComment());
-        review.setDate(new Date()); // Update date to reflect modification time
-
+        review.setDate(new Date());
         Review updatedReview = reviewRepository.save(review);
         logger.info("Review ID {} updated for product {}", reviewId, review.getProduct().getId());
-
-        // Update product's average rating and number of reviews
         updateProductRatingStats(review.getProduct().getId());
-
         return toDto(updatedReview);
     }
 
-    /**
-     * Updates the average rating and number of reviews for a given product.
-     * This method is called after a review is added, updated, or deleted.
-     *
-     * @param productId The ID of the product whose rating stats need to be updated.
-     */
     private void updateProductRatingStats(Long productId) {
-        Product product = productRepository.findById(productId)
-                .orElse(null); // Find the product, or return null if not found
-
+        Product product = productRepository.findById(productId).orElse(null);
         if (product == null) {
-            // This case should ideally not happen if productId is always valid from an existing review's product
             logger.warn("Product not found with ID {} during rating stats update. Cannot update product rating.", productId);
             return;
         }
-
         List<Review> reviewsForProduct = reviewRepository.findByProductId(productId);
         if (reviewsForProduct.isEmpty()) {
             product.setAverageRating(0.0f);
@@ -191,7 +175,7 @@ public class ReviewService {
             product.setAverageRating((float) (sumRatings / reviewsForProduct.size()));
             product.setNumOfReviews(reviewsForProduct.size());
         }
-        productRepository.save(product); // Save the updated product information
+        productRepository.save(product);
         logger.info("Updated rating stats for product ID {}: AvgRating={}, NumReviews={}",
                 productId, product.getAverageRating(), product.getNumOfReviews());
     }

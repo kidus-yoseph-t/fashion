@@ -1,10 +1,7 @@
 package com.project.Fashion.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 
 @Data
@@ -20,4 +17,14 @@ public class DeliveryRequestDto {
     @NotNull(message = "Delivery cost cannot be null.")
     @DecimalMin(value = "0.0", inclusive = true, message = "Delivery cost cannot be negative.") // Allow 0 for free shipping
     private Float deliveryCost; // Changed to Float for @NotNull
+
+    @Schema(description = "Minimum estimated delivery days.", example = "5")
+    @NotNull(message = "Minimum delivery days cannot be null.")
+    @Min(value = 1, message = "Minimum delivery days must be at least 1.")
+    private Integer minDeliveryDays;
+
+    @Schema(description = "Maximum estimated delivery days.", example = "7")
+    @NotNull(message = "Maximum delivery days cannot be null.")
+    @Min(value = 1, message = "Maximum delivery days must be at least 1.")
+    private Integer maxDeliveryDays;
 }

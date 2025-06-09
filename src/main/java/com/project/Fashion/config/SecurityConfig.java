@@ -67,9 +67,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/users/register", "/api/users/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products", "/api/products/{id:[0-9]+}", "/api/products/image/**", "/api/products/categories", "/api/products/price-range-meta").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/reviews/product/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/deliveries", "/api/deliveries/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/contact").permitAll()
-                        // USER MANAGEMENT (Adjusted as per previous discussions)
+                        // USER MANAGEMENT
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated() // Any authenticated user
                         .requestMatchers(HttpMethod.PATCH, "/api/users/me").authenticated() // Any authenticated user
                         .requestMatchers(HttpMethod.POST, "/api/users/admin/create-user").hasRole("ADMIN")
@@ -106,6 +107,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/chat/**").authenticated()
                         // ADMIN MESSAGES (Contact form submissions)
                         .requestMatchers("/api/AdminMessages", "/api/AdminMessages/**").hasRole("ADMIN")
+                        .requestMatchers("/api/admin/settings").hasRole("ADMIN")
                         // LOGOUT
                         .requestMatchers(HttpMethod.POST, "/api/users/logout").authenticated() // Any authenticated user can log out
                         // DEFAULT RULE

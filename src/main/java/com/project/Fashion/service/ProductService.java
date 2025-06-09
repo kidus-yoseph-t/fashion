@@ -11,8 +11,10 @@ import com.project.Fashion.dto.ProductPriceRangeDto;
 import com.project.Fashion.config.mappers.ProductMapper;
 import com.project.Fashion.exception.exceptions.ProductNotFoundException;
 import com.project.Fashion.exception.exceptions.UserNotFoundException;
+import com.project.Fashion.model.Cart;
 import com.project.Fashion.model.Product;
 import com.project.Fashion.model.User;
+import com.project.Fashion.repository.CartRepository;
 import com.project.Fashion.repository.ProductRepository;
 import com.project.Fashion.repository.UserRepository;
 import com.project.Fashion.config.RdfConfigProperties;
@@ -60,6 +62,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
+    private final CartRepository cartRepository;
     private final ProductMapper productMapper;
     private final SparqlQueryService sparqlQueryService;
     private final RdfConfigProperties rdfConfigProperties;
@@ -139,7 +142,6 @@ public class ProductService {
     @Cacheable(value = "products", key = "#id")
     @Transactional(readOnly = true)
     public ProductResponseDto getProductById(Long id) {
-        // ... (This method is correct, no changes needed)
         log.info("Fetching product from DB with id: {}", id);
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
@@ -164,12 +166,7 @@ public class ProductService {
             throw new AccessDeniedException("Only SELLERs can create products.");
         }
 
-        // Use the mapper to convert from DTO to entity
         Product product = productMapper.toProductEntity(productCreateDto);
-
-        // Explicitly set the stock from the DTO to ensure it's handled.
-        product.setStock(productCreateDto.getStock());
-
         product.setSeller(authenticatedSeller);
         product.setAverageRating(0.0f);
         product.setNumOfReviews(0);
@@ -195,13 +192,16 @@ public class ProductService {
                 .orElseThrow(() -> new ProductNotFoundException("Product not found with id: " + id));
         checkProductOwnership(existingProduct, authenticatedUser);
 
-        // Use the mapper to update fields like name, description, price, etc.
         productMapper.updateProductFromDto(productUpdateDto, existingProduct);
 
-        // --- CHANGE START ---
-        // Explicitly set the stock from the DTO. This allows sellers to update their inventory count.
-        existingProduct.setStock(productUpdateDto.getStock());
-        // --- CHANGE END ---
+        // If stock is updated to 0, remove the product from all user carts
+        if (productUpdateDto.getStock() != null && productUpdateDto.getStock() == 0) {
+            List<Cart> cartsWithProduct = cartRepository.findByProductId(id);
+            if (!cartsWithProduct.isEmpty()) {
+                cartRepository.deleteAll(cartsWithProduct);
+                log.info("Product {} stock updated to 0. Removed it from {} user carts.", id, cartsWithProduct.size());
+            }
+        }
 
         Product updatedProduct = productRepository.save(existingProduct);
         log.info("Product {} updated by owner {}. Evicting relevant caches.", updatedProduct.getId(), authenticatedUser.getEmail());
@@ -220,7 +220,6 @@ public class ProductService {
             @CacheEvict(value = "sellerProducts", allEntries = true)
     })
     public void deleteProduct(Long id) {
-        // ... (This method is correct, no changes needed)
         User authUser = getCurrentAuthenticatedUser();
         if (!productRepository.existsById(id)) {
             throw new ProductNotFoundException("Product not found with id: " + id + " for deletion.");
@@ -232,6 +231,13 @@ public class ProductService {
             checkProductOwnership(product, authUser);
             log.info("Seller {} deleting own product {}", authUser.getEmail(), id);
         } else throw new AccessDeniedException("No permission to delete product " + id);
+
+        // Also remove the product from all carts before deleting the product itself
+        List<Cart> cartsWithProduct = cartRepository.findByProductId(id);
+        if (!cartsWithProduct.isEmpty()) {
+            cartRepository.deleteAll(cartsWithProduct);
+            log.info("Deleting product {}. Removed it from {} user carts first.", id, cartsWithProduct.size());
+        }
 
         productRepository.deleteById(id);
         log.info("Evicting caches for deleted product {}", id);
@@ -246,7 +252,6 @@ public class ProductService {
             @CacheEvict(value = "sellerProducts", allEntries = true)
     })
     public ProductResponseDto addImageToProduct(Long productId, MultipartFile file) {
-        // ... (This method is correct, no changes needed)
         if (file.isEmpty()) {
             throw new ImageStorageException("Failed to store empty file.");
         }
@@ -286,16 +291,13 @@ public class ProductService {
     @Transactional(readOnly = true)
     @Cacheable("productCategories")
     public List<String> getDistinctCategories() {
-        // ... (This method is correct, no changes needed)
         log.info("Fetching distinct categories from database.");
-        List<String> categories = productRepository.findDistinctCategories();
-        return categories != null ? categories : Collections.emptyList();
+        return List.of("Dress", "Jacket", "Kids", "Shirt", "T-shirt", "Trouser");
     }
 
     @Transactional(readOnly = true)
     @Cacheable("productPriceRange")
     public ProductPriceRangeDto getProductPriceRange() {
-        // ... (This method is correct, no changes needed)
         log.info("Fetching product price range from database.");
         Float minPrice = productRepository.findMinPrice();
         Float maxPrice = productRepository.findMaxPrice();
@@ -305,7 +307,6 @@ public class ProductService {
     @Transactional(readOnly = true)
     @Cacheable(value = "sellerProducts", key = "{#pageable.pageNumber, #pageable.pageSize, #pageable.sort.toString(), T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName()}")
     public Page<ProductResponseDto> getProductsByAuthenticatedSeller(Pageable pageable) {
-        // ... (This method is correct, no changes needed)
         User authSeller = getCurrentAuthenticatedUser();
         if (!"SELLER".equalsIgnoreCase(authSeller.getRole())) {
             log.warn("User {} (role {}) attempted to access seller products.", authSeller.getEmail(), authSeller.getRole());

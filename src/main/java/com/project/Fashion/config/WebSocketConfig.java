@@ -18,7 +18,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS(); // endpoint
+        // REFACTORED: Replaced the wildcard pattern with specific origins
+        // to match the main CORS configuration and allow credentials.
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins("http://localhost:5173", "http://localhost:5174")
+                .withSockJS();
     }
 }
 

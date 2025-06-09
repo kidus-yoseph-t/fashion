@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
 @Tag(name = "Contact Us", description = "API for submitting contact messages from users to administrators.")
 public class ContactMessageController {
 
-    private static final Logger logger = LoggerFactory.getLogger(ContactMessageController.class); // Added logger
+    private static final Logger logger = LoggerFactory.getLogger(ContactMessageController.class);
 
     @Autowired
     private ContactMessageService contactMessageService;
@@ -32,34 +32,21 @@ public class ContactMessageController {
             description = "Allows any user (public access) to submit a contact message. The message is then stored for admin review.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Message sent successfully",
-                    content = @Content(mediaType = MediaType.TEXT_PLAIN_VALUE, schema = @Schema(type = "string", example = "Message sent successfully!"))),
-            @ApiResponse(responseCode = "400", description = "Invalid input data (e.g., missing fields, invalid email format)",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ContactMessage.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid input data",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(example = "{\"senderName\":\"Sender name cannot be blank.\"}"))),
-            @ApiResponse(responseCode = "500", description = "Failed to send message due to an internal server error",
-                    content = @Content(mediaType = MediaType.TEXT_PLAIN_VALUE, schema = @Schema(type = "string", example = "Failed to send message.")))
+            @ApiResponse(responseCode = "500", description = "Failed to send message due to an internal server error")
     })
     @PostMapping
-    public ResponseEntity<String> submitContactMessage(
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Contact message details.",
-                    required = true,
-                    content = @Content(schema = @Schema(implementation = ContactMessageRequestDto.class))) // Use DTO for schema
-            @Valid @org.springframework.web.bind.annotation.RequestBody ContactMessageRequestDto messageRequestDto) { // Use DTO for request
+    public ResponseEntity<ContactMessage> submitContactMessage(
+            @Valid @RequestBody ContactMessageRequestDto messageRequestDto) {
 
-        try {
-            // Manually map DTO to Entity
-            ContactMessage contactMessage = new ContactMessage();
-            contactMessage.setSenderName(messageRequestDto.getSenderName());
-            contactMessage.setSenderEmail(messageRequestDto.getSenderEmail());
-            contactMessage.setSubject(messageRequestDto.getSubject());
-            contactMessage.setMessage(messageRequestDto.getMessage());
-            // createdAt and status are handled by the entity's default constructor or @PrePersist
+        logger.info("Received contact message submission from: {}", messageRequestDto.getSenderEmail());
 
-            contactMessageService.saveMessage(contactMessage);
-            return ResponseEntity.status(HttpStatus.CREATED).body("Message sent successfully!");
-        } catch (Exception e) {
-            logger.error("Error saving contact message from DTO: {}", messageRequestDto, e); // Log with DTO details
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to send message.");
-        }
+        // The service now handles mapping and saving.
+        // This also removes the local try-catch to allow the GlobalExceptionHandler to manage errors.
+        ContactMessage savedMessage = contactMessageService.saveMessageFromDto(messageRequestDto);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedMessage);
     }
 }

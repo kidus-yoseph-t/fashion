@@ -9,7 +9,7 @@ public class MessageDto {
     private Long id;
     private Long conversationId;
     private String senderId;
-    private String encryptedContent;
+    private String content; // Renamed from encryptedContent
     private LocalDateTime sentAt;
     private boolean isRead;
 }

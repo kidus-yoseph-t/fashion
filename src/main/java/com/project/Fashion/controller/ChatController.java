@@ -213,6 +213,28 @@ public class ChatController {
         return ResponseEntity.ok().build();
     }
 
+
+    @Operation(summary = "Mark messages in a conversation as read",
+            description = "Marks all unread messages sent by the other participant in a conversation as read for the authenticated user.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Messages marked as read successfully"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not a participant)"),
+            @ApiResponse(responseCode = "404", description = "Conversation not found")
+    })
+    @PostMapping("/conversation/{conversationId}/mark-as-read")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> markConversationAsRead(@PathVariable Long conversationId) {
+        String authenticatedUserId = getAuthenticatedUserId();
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ConversationNotFoundException("Conversation not found with id: " + conversationId));
+
+        authorizeConversationParticipant(conversation, authenticatedUserId);
+
+        chatService.markMessagesAsRead(conversationId, authenticatedUserId);
+        return ResponseEntity.ok().build();
+    }
+
     @Operation(summary = "Get unread message count for the authenticated user",
             description = "Retrieves the total number of unread messages across all conversations for the currently authenticated user.")
     @ApiResponses(value = {

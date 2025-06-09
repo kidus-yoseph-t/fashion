@@ -23,6 +23,9 @@ public class Delivery {
     @Column(nullable = false)
     private float deliveryCost;
 
+    private Integer minDeliveryDays;
+    private Integer maxDeliveryDays;
+
     @OneToMany(mappedBy = "delivery")
     private List<Order> orders;
 }

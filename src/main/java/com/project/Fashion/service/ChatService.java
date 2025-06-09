@@ -17,12 +17,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime; // For MessageDto's sentAt
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors; // For mapping lists
+import java.util.stream.Collectors;
 
 @Service
-@Transactional // class-level transactional for default behavior
+@Transactional
 public class ChatService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatService.class);
@@ -31,117 +32,103 @@ public class ChatService {
     @Autowired private ConversationRepository conversationRepository;
     @Autowired private MessageRepository messageRepository;
 
-    public ConversationDto startOrGetConversation(String user1Id, String user2Id) {
-        logger.info("Attempting to start or get conversation between user {} and user {}", user1Id, user2Id);
-        User user1 = userRepository.findById(user1Id)
-                .orElseThrow(() -> {
-                    logger.warn("User1 not found with ID: {}", user1Id);
-                    return new UserNotFoundException("User1 not found with ID: " + user1Id);
-                });
-        User user2 = userRepository.findById(user2Id)
-                .orElseThrow(() -> {
-                    logger.warn("User2 not found with ID: {}", user2Id);
-                    return new UserNotFoundException("User2 not found with ID: " + user2Id);
-                });
-
-        Conversation conversation = conversationRepository.findByUsers(user1Id, user2Id)
-                .orElseGet(() -> {
-                    logger.info("No existing conversation found. Creating new one for users {} and {}", user1Id, user2Id);
-                    Conversation newConversation = new Conversation();
-                    newConversation.setUser1(user1);
-                    newConversation.setUser2(user2);
-                    // startedAt is set by default in Conversation entity
-                    return conversationRepository.save(newConversation);
-                });
-        logger.info("Conversation ID {} obtained for users {} and {}", conversation.getId(), user1Id, user2Id);
-        return toDto(conversation);
-    }
-
-    // Changed to return MessageDto
-    public MessageDto sendMessage(Long conversationId, String senderId, String encryptedContent) {
-        logger.info("Attempting to send message from sender {} to conversation {}", senderId, conversationId);
-        Conversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> {
-                    logger.warn("Conversation not found with ID: {} while sending message", conversationId);
-                    return new ConversationNotFoundException("Conversation not found with ID: " + conversationId);
-                });
-        User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> {
-                    logger.warn("Sender not found with ID: {} while sending message", senderId);
-                    // Using MessageSendException as per original controller logic for user not found in send context
-                    return new MessageSendException("Sender not found with ID: " + senderId);
-                });
-
-        Message message = new Message();
-        message.setConversation(conversation);
-        message.setSender(sender);
-        message.setEncryptedContent(encryptedContent);
-        // sentAt is set by default in Message entity, isRead defaults to false
-
-        Message savedMessage = messageRepository.save(message);
-        logger.info("Message ID {} saved successfully from sender {} to conversation {}", savedMessage.getId(), senderId, conversationId);
-        return toDto(savedMessage); // Convert and return the persisted MessageDto
-    }
-
-    // Helper to convert Conversation entity to ConversationDto
-    private ConversationDto toDto(Conversation conversation) {
-        if (conversation == null) return null;
-        ConversationDto dto = new ConversationDto();
-        dto.setId(conversation.getId());
-        if (conversation.getUser1() != null) dto.setUser1Id(conversation.getUser1().getId());
-        if (conversation.getUser2() != null) dto.setUser2Id(conversation.getUser2().getId());
-        dto.setStartedAt(conversation.getStartedAt());
-        return dto;
-    }
-
-    // Helper to convert Message entity to MessageDto
-    // This DTO is used for REST API responses and now as service layer return.
     private MessageDto toDto(Message message) {
         if (message == null) return null;
         MessageDto dto = new MessageDto();
         dto.setId(message.getId());
-        if (message.getConversation() != null) dto.setConversationId(message.getConversation().getId());
-        if (message.getSender() != null) dto.setSenderId(message.getSender().getId());
-        dto.setEncryptedContent(message.getEncryptedContent()); // Field name in MessageDto
-        dto.setSentAt(message.getSentAt());                     // LocalDateTime
+        if (message.getConversation() != null) {
+            dto.setConversationId(message.getConversation().getId());
+        }
+        if (message.getSender() != null) {
+            dto.setSenderId(message.getSender().getId());
+        }
+        // The content of a message is stored in the 'encryptedContent' field in the model
+        dto.setContent(message.getEncryptedContent());
+        dto.setSentAt(message.getSentAt());
         dto.setRead(message.isRead());
         return dto;
     }
 
-    @Transactional(readOnly = true)
-    public List<MessageDto> getMessages(Long conversationId) {
-        logger.debug("Fetching messages for conversation ID: {}", conversationId);
-        if (!conversationRepository.existsById(conversationId)) {
-            logger.warn("Attempted to fetch messages for non-existent conversation ID: {}", conversationId);
-            throw new ConversationNotFoundException("Conversation not found with ID: " + conversationId);
+    private ConversationDto toDto(Conversation conversation, String currentUserId) {
+        if (conversation == null) return null;
+        ConversationDto dto = new ConversationDto();
+        dto.setId(conversation.getId());
+        dto.setStartedAt(conversation.getStartedAt());
+
+        if (conversation.getUser1() != null) {
+            dto.setUser1Id(conversation.getUser1().getId());
+            dto.setUser1Name(conversation.getUser1().getFirstName() + " " + conversation.getUser1().getLastName());
         }
-        return messageRepository.findByConversationIdOrderBySentAtAsc(conversationId)
-                .stream()
-                .map(this::toDto)
-                .collect(Collectors.toList());
+        if (conversation.getUser2() != null) {
+            dto.setUser2Id(conversation.getUser2().getId());
+            dto.setUser2Name(conversation.getUser2().getFirstName() + " " + conversation.getUser2().getLastName());
+        }
+
+        // Find the last message to show a preview in the conversation list
+        Message lastMessage = messageRepository.findTopByConversationIdOrderBySentAtDesc(conversation.getId()).orElse(null);
+        if (lastMessage != null) {
+            dto.setLastMessageContent(lastMessage.getEncryptedContent());
+            dto.setLastMessageTimestamp(lastMessage.getSentAt());
+            if(lastMessage.getSender() != null) {
+                dto.setLastMessageSenderId(lastMessage.getSender().getId());
+            }
+        }
+
+        // Calculate the number of unread messages for the current user
+        if (currentUserId != null) {
+            dto.setUnreadMessageCount(messageRepository.countByConversationIdAndSenderIdNotAndIsReadFalse(conversation.getId(), currentUserId));
+        }
+
+        return dto;
     }
 
     @Transactional(readOnly = true)
     public List<ConversationDto> getUserConversations(String userId) {
         logger.debug("Fetching conversations for user ID: {}", userId);
         if(!userRepository.existsById(userId)) {
-            logger.warn("Attempted to fetch conversations for non-existent user ID: {}", userId);
             throw new UserNotFoundException("User not found with ID: " + userId);
         }
-        return conversationRepository.findAllByUserId(userId)
-                .stream()
-                .map(this::toDto)
+
+        List<Conversation> conversations = conversationRepository.findAllByUserId(userId);
+
+        // Map conversations to DTOs and sort them by the last message's timestamp
+        return conversations.stream()
+                .map(convo -> toDto(convo, userId))
+                .sorted(Comparator.comparing(ConversationDto::getLastMessageTimestamp, Comparator.nullsLast(Comparator.reverseOrder())))
                 .collect(Collectors.toList());
     }
 
-    // This method might not be directly called by ChatController anymore if combined with markMessagesAsRead
-    @Transactional(readOnly = true)
-    public List<MessageDto> getUnreadMessages(Long conversationId, String userId) {
-        logger.debug("Fetching unread messages for user {} in conversation {}", userId, conversationId);
-        return messageRepository.findUnreadMessagesForUser(conversationId, userId)
-                .stream()
-                .map(this::toDto)
-                .collect(Collectors.toList());
+    public ConversationDto startOrGetConversation(String user1Id, String user2Id) {
+        User user1 = userRepository.findById(user1Id).orElseThrow(() -> new UserNotFoundException("User1 not found: " + user1Id));
+        User user2 = userRepository.findById(user2Id).orElseThrow(() -> new UserNotFoundException("User2 not found: " + user2Id));
+
+        // Find an existing conversation or create a new one
+        Conversation conversation = conversationRepository.findByUsers(user1Id, user2Id)
+                .orElseGet(() -> {
+                    logger.info("No existing conversation found. Creating new one for users {} and {}", user1Id, user2Id);
+                    Conversation newConversation = new Conversation();
+                    newConversation.setUser1(user1);
+                    newConversation.setUser2(user2);
+                    return conversationRepository.save(newConversation);
+                });
+        return toDto(conversation, user1Id);
+    }
+
+    public MessageDto sendMessage(Long conversationId, String senderId, String content) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ConversationNotFoundException("Conversation not found: " + conversationId));
+        User sender = userRepository.findById(senderId)
+                .orElseThrow(() -> new MessageSendException("Sender not found: " + senderId));
+
+        Message message = new Message();
+        message.setConversation(conversation);
+        message.setSender(sender);
+        message.setEncryptedContent(content);
+        message.setSentAt(LocalDateTime.now());
+        message.setRead(false);
+
+        Message savedMessage = messageRepository.save(message);
+        return toDto(savedMessage);
     }
 
     public void markMessagesAsRead(Long conversationId, String userId) {
@@ -151,19 +138,19 @@ public class ChatService {
             unreadMessages.forEach(msg -> msg.setRead(true));
             messageRepository.saveAll(unreadMessages);
             logger.info("Marked {} messages as read for user {} in conversation {}", unreadMessages.size(), userId, conversationId);
-        } else {
-            logger.info("No unread messages to mark as read for user {} in conversation {}", userId, conversationId);
         }
     }
 
     @Transactional(readOnly = true)
+    public List<MessageDto> getMessages(Long conversationId) {
+        return messageRepository.findByConversationIdOrderBySentAtAsc(conversationId)
+                .stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public int getUnreadMessageCountForUser(String userId) {
-        logger.debug("Counting unread messages for user ID: {}", userId);
-        if(!userRepository.existsById(userId)) {
-            logger.warn("Attempted to count unread messages for non-existent user ID: {}", userId);
-            // Depending on requirements, could return 0 or throw UserNotFoundException
-            return 0;
-        }
         return messageRepository.countUnreadMessagesForRecipient(userId);
     }
 }

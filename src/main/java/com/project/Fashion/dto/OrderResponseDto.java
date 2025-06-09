@@ -9,6 +9,7 @@ public class OrderResponseDto {
     private Long productId;
     private String productName;
     private float productPrice;
+    private String productPhotoUrl;
     private int quantity;
     private float total;
     private Date date;

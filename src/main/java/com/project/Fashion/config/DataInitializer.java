@@ -6,8 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.Optional;
 
 @Component
 public class DataInitializer implements CommandLineRunner {
@@ -21,36 +20,41 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        // We check if the delivery table is empty before adding data.
-        if (deliveryRepository.count() == 0) {
-            System.out.println("No delivery options found. Seeding initial data...");
+        System.out.println("Checking and initializing delivery options...");
 
-            // Create Delivery Option 1: Standard
-            Delivery standard = new Delivery();
-            standard.setType("Standard Delivery");
-            standard.setDeliveryCost(5.99f);
-            // In a real app, you might add a 'deliveryTimeEstimate' field to your Delivery model
-            // standard.setDeliveryTimeEstimate("5-7 Business Days");
+        // Define the delivery options and their properties
+        upsertDeliveryOption("Standard Delivery", 5.99f, 5, 7);
+        upsertDeliveryOption("Express Delivery", 15.99f, 2, 3);
+        upsertDeliveryOption("Free Shipping", 0.00f, 7, 10);
 
-            // Create Delivery Option 2: Express
-            Delivery express = new Delivery();
-            express.setType("Express Delivery");
-            express.setDeliveryCost(15.99f);
-            // express.setDeliveryTimeEstimate("2-3 Business Days");
+        System.out.println("Delivery options are up to date.");
+    }
 
-            // Create Delivery Option 3: Free Shipping
-            Delivery free = new Delivery();
-            free.setType("Free Shipping");
-            free.setDeliveryCost(0.00f);
-            // free.setDeliveryTimeEstimate("7-10 Business Days");
+    /**
+     * Creates a delivery option if it doesn't exist, or updates it
+     * if it's missing the delivery day information.
+     */
+    private void upsertDeliveryOption(String type, float cost, int minDays, int maxDays) {
+        Optional<Delivery> existingOptionOpt = deliveryRepository.findByType(type);
 
-            // Save all the new delivery options to the database
-            List<Delivery> initialOptions = Arrays.asList(standard, express, free);
-            deliveryRepository.saveAll(initialOptions);
-
-            System.out.println("Initial delivery options have been seeded to the database.");
+        if (existingOptionOpt.isEmpty()) {
+            // Option doesn't exist, so create it
+            System.out.println("Creating new delivery option: " + type);
+            Delivery newOption = new Delivery();
+            newOption.setType(type);
+            newOption.setDeliveryCost(cost);
+            newOption.setMinDeliveryDays(minDays);
+            newOption.setMaxDeliveryDays(maxDays);
+            deliveryRepository.save(newOption);
         } else {
-            System.out.println("Delivery options already exist. No seeding necessary.");
+            // Option exists, check if it needs to be updated
+            Delivery existingOption = existingOptionOpt.get();
+            if (existingOption.getMinDeliveryDays() == null || existingOption.getMaxDeliveryDays() == null) {
+                System.out.println("Updating existing delivery option with delivery days: " + type);
+                existingOption.setMinDeliveryDays(minDays);
+                existingOption.setMaxDeliveryDays(maxDays);
+                deliveryRepository.save(existingOption);
+            }
         }
     }
 }

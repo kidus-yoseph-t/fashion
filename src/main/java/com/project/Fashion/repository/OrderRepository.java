@@ -21,14 +21,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("statuses") List<OrderStatus> statuses
     );
 
-    /**
-     * Finds orders containing products sold by a specific seller, with pagination.
-     * Spring Data JPA will generate a query like:
-     * SELECT o FROM Order o WHERE o.product.seller.id = :sellerId
-     *
-     * @param sellerId The ID of the seller.
-     * @param pageable Pagination and sorting information.
-     * @return A Page of orders.
-     */
     Page<Order> findByProduct_Seller_Id(String sellerId, Pageable pageable);
+    
+    /**
+     * Efficiently checks if a user has at least one order for a specific product
+     * with a qualifying status (e.g., PAID, COMPLETED, SHIPPED).
+     * @param userId The ID of the user.
+     * @param productId The ID of the product.
+     * @param statuses A list of qualifying order statuses.
+     * @return true if a matching order exists, false otherwise.
+     */
+    boolean existsByUser_IdAndProduct_IdAndStatusIn(String userId, Long productId, List<OrderStatus> statuses);
 }

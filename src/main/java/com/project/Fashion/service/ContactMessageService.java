@@ -1,5 +1,6 @@
 package com.project.Fashion.service;
 
+import com.project.Fashion.dto.ContactMessageRequestDto;
 import com.project.Fashion.model.ContactMessage;
 import com.project.Fashion.repository.ContactMessageRepository;
 import org.slf4j.Logger;
@@ -18,39 +19,47 @@ public class ContactMessageService {
     private static final Logger logger = LoggerFactory.getLogger(ContactMessageService.class);
 
     private final ContactMessageRepository contactMessageRepository;
-    private final SimpMessagingTemplate messagingTemplate; // Inject SimpMessagingTemplate
+    private final SimpMessagingTemplate messagingTemplate;
 
-    // WebSocket topic for new contact messages for admins
     private static final String ADMIN_NEW_CONTACT_MESSAGE_TOPIC = "/topic/admin/newContactMessage";
 
+    // Use nullable annotation to indicate messagingTemplate might not be present in all environments (e.g., certain tests)
     @Autowired
     public ContactMessageService(ContactMessageRepository contactMessageRepository,
-                                 SimpMessagingTemplate messagingTemplate) { // Add to constructor
+                                 Optional<SimpMessagingTemplate> messagingTemplate) {
         this.contactMessageRepository = contactMessageRepository;
-        this.messagingTemplate = messagingTemplate;
+        this.messagingTemplate = messagingTemplate.orElse(null);
+        if (this.messagingTemplate == null) {
+            logger.warn("SimpMessagingTemplate is not available. Real-time notifications for contact messages will be disabled.");
+        }
     }
 
     @Transactional
-    public ContactMessage saveMessage(ContactMessage message) {
-        // Ensure createdAt is set if not handled automatically by @PrePersist in model
-        if (message.getCreatedAt() == null) {
-            message.setCreatedAt(java.time.LocalDateTime.now());
-        }
-        // Ensure status is set if not handled by default in model
-        if (message.getStatus() == null || message.getStatus().isEmpty()) {
-            message.setStatus("unread");
-        }
+    public ContactMessage saveMessageFromDto(ContactMessageRequestDto dto) {
+        // Map DTO to entity within the service
+        ContactMessage message = new ContactMessage();
+        message.setSenderName(dto.getSenderName());
+        message.setSenderEmail(dto.getSenderEmail());
+        message.setSubject(dto.getSubject());
+        message.setMessage(dto.getMessage());
+        // createdAt and status are handled by the entity's defaults
 
+        // Save the message to the database first
         ContactMessage savedMessage = contactMessageRepository.save(message);
         logger.info("Contact message ID {} saved from sender: {}", savedMessage.getId(), savedMessage.getSenderEmail());
 
-        // After saving, send the message to the admin WebSocket topic
-        if (savedMessage != null) {
-            logger.info("Sending new contact message notification to WebSocket topic: {}", ADMIN_NEW_CONTACT_MESSAGE_TOPIC);
-            messagingTemplate.convertAndSend(ADMIN_NEW_CONTACT_MESSAGE_TOPIC, savedMessage);
-            // Frontend (admin dashboard) should subscribe to "/topic/admin/newContactMessage"
-            // The payload will be the savedContactMessage object (JSON).
+        // --- REFACTORED: Defensive check for real-time notification ---
+        // Now, even if the messaging template fails, the message is still saved.
+        if (messagingTemplate != null) {
+            try {
+                logger.info("Sending new contact message notification to WebSocket topic: {}", ADMIN_NEW_CONTACT_MESSAGE_TOPIC);
+                messagingTemplate.convertAndSend(ADMIN_NEW_CONTACT_MESSAGE_TOPIC, savedMessage);
+            } catch (Exception e) {
+                // Log the error but don't fail the entire transaction
+                logger.error("Failed to send real-time contact message notification. The message was saved successfully, but the WebSocket push failed.", e);
+            }
         }
+
         return savedMessage;
     }
 
@@ -76,17 +85,13 @@ public class ContactMessageService {
 
     @Transactional
     public ContactMessage updateMessageStatus(Long id, String newStatus) {
-        Optional<ContactMessage> optionalMessage = contactMessageRepository.findById(id);
-        if (optionalMessage.isPresent()) {
-            ContactMessage message = optionalMessage.get();
-            message.setStatus(newStatus.toLowerCase()); // Store status consistently (e.g., lowercase)
-            ContactMessage updatedMessage = contactMessageRepository.save(message);
-            logger.info("Updated status of contact message ID {} to '{}'", id, newStatus);
-            // Optionally, you could also send an update to a WebSocket topic if admins need real-time status changes
-            // messagingTemplate.convertAndSend("/topic/admin/contactMessageUpdated", updatedMessage);
-            return updatedMessage;
-        }
-        logger.warn("Attempted to update status for non-existent contact message ID: {}", id);
-        return null; // Or throw an exception
+        ContactMessage message = contactMessageRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Message not found with id: " + id)); // Or a custom exception
+
+        message.setStatus(newStatus.toLowerCase());
+        ContactMessage updatedMessage = contactMessageRepository.save(message);
+        logger.info("Updated status of contact message ID {} to '{}'", id, newStatus);
+
+        return updatedMessage;
     }
 }

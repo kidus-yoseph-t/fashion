@@ -30,6 +30,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +48,14 @@ public class OrderService {
     private final CartRepository cartRepository;
     private final DeliveryRepository deliveryRepository;
 
-    // This helper method is well-implemented. No changes needed.
+    // Define qualifying statuses for what counts as a "purchase" for reviews
+    private static final List<OrderStatus> PURCHASED_STATUSES = Arrays.asList(
+            OrderStatus.PAID,
+            OrderStatus.PROCESSING,
+            OrderStatus.SHIPPED,
+            OrderStatus.COMPLETED
+    );
+
     private User getCurrentAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
@@ -66,7 +74,6 @@ public class OrderService {
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found in database. Email: " + email));
     }
 
-    // This method is well-implemented. No changes needed.
     public OrderResponseDto  createOrderFromDto(OrderRequestDto dto) {
         User user = userRepository.findById(dto.getUser())
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + dto.getUser()));
@@ -88,6 +95,17 @@ public class OrderService {
         return convertToDto(savedOrder);
     }
 
+    /**
+     * Checks if a given user has purchased a specific product.
+     * @param userId The ID of the user.
+     * @param productId The ID of the product.
+     * @return true if a qualifying order exists, false otherwise.
+     */
+    @Transactional(readOnly = true)
+    public boolean checkIfUserHasPurchasedProduct(String userId, Long productId) {
+        return orderRepository.existsByUser_IdAndProduct_IdAndStatusIn(userId, productId, PURCHASED_STATUSES);
+    }
+
     @Transactional(readOnly = true)
     public List<OrderResponseDto> getAllOrders() {
         List<Order> orders = orderRepository.findAll();
@@ -96,7 +114,6 @@ public class OrderService {
                 .collect(Collectors.toList());
     }
 
-    // No changes needed.
     @Cacheable(value = "order", key = "#id")
     @Transactional(readOnly = true)
     public OrderResponseDto getOrderById(Long id) {
@@ -108,14 +125,9 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public Page<OrderResponseDto> getOrdersByUserId(String userId, Pageable pageable) {
-        // Ensure the user exists before attempting to fetch orders
         userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId + " when fetching orders."));
-
-        // Use the new repository method that accepts a Pageable object
         Page<Order> userOrdersPage = orderRepository.findByUserId(userId, pageable);
-
-        // Convert the Page of entities to a Page of DTOs
         return userOrdersPage.map(this::convertToDto);
     }
 
@@ -146,7 +158,6 @@ public class OrderService {
         return convertToDto(updatedOrder);
     }
 
-    // This method is very well-implemented. No changes needed.
     @CacheEvict(value = "order", key = "#id")
     public OrderResponseDto patchOrder(Long id, Map<String, Object> updates) {
         Order order = orderRepository.findById(id)
@@ -199,7 +210,6 @@ public class OrderService {
         return convertToDto(patchedOrder);
     }
 
-    // No changes needed.
     @CacheEvict(value = "order", key = "#id")
     public void deleteOrder(Long id) {
         if (!orderRepository.existsById(id)) {
@@ -209,7 +219,6 @@ public class OrderService {
         log.info("Order {} deleted. Evicting from 'order' cache.", id);
     }
 
-    // --- REFACTORED METHOD START ---
     @Transactional
     public List<OrderResponseDto> checkout(String userId, Long deliveryId) {
         User user = userRepository.findById(userId)
@@ -227,32 +236,27 @@ public class OrderService {
         for (Cart cartItem : cartItems) {
             Product product = cartItem.getProduct();
 
-            // Inventory check
             if (product.getStock() < cartItem.getQuantity()) {
-                // Throws an exception that will be translated to a 409 Conflict with a clear message
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Not enough stock for '" + product.getName() + "'. Requested: " + cartItem.getQuantity() + ", Available: " + product.getStock());
             }
 
-            // Decrease the product stock
             product.setStock(product.getStock() - cartItem.getQuantity());
-            productRepository.save(product); // Save the updated stock level
+            productRepository.save(product);
 
             Order order = new Order();
             order.setUser(user);
             order.setProduct(product);
             order.setQuantity(cartItem.getQuantity());
             order.setDate(new Date());
-            order.setTotal(product.getPrice() * cartItem.getQuantity()); // Recalculate total for safety
+            order.setTotal(product.getPrice() * cartItem.getQuantity());
             order.setDelivery(delivery);
-            order.setStatus(OrderStatus.PENDING_PAYMENT); // Set initial status
+            order.setStatus(OrderStatus.PENDING_PAYMENT);
 
             createdOrders.add(orderRepository.save(order));
         }
 
-        // Clear the user's cart after all orders are successfully created
         cartRepository.deleteAll(cartItems);
-
         log.info("Checkout successful for user ID: {}. Created {} orders.", userId, createdOrders.size());
 
         return createdOrders.stream()
@@ -271,6 +275,7 @@ public class OrderService {
             dto.setProductId(order.getProduct().getId());
             dto.setProductName(order.getProduct().getName());
             dto.setProductPrice(order.getProduct().getPrice());
+            dto.setProductPhotoUrl(order.getProduct().getPhotoUrl());
         }
         dto.setDate(order.getDate());
         dto.setQuantity(order.getQuantity());

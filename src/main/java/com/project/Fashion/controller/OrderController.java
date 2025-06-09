@@ -70,7 +70,7 @@ public class OrderController {
         this.deliveryRepository = deliveryRepository;
     }
 
-    private User getAuthenticatedUserFromSecurityContext() { // Renamed to avoid conflict if inherited
+    private User getAuthenticatedUserFromSecurityContext() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
             throw new AccessDeniedException("User is not authenticated.");
@@ -80,12 +80,30 @@ public class OrderController {
                 .orElseThrow(() -> new UserNotFoundException("Authenticated user not found with email: " + currentPrincipalName));
     }
 
+    @Operation(summary = "Check if the authenticated user has purchased a product",
+            description = "Returns true if the authenticated BUYER has a completed order for the given product ID.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successfully checked purchase status",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(type = "object", example = "{\"hasPurchased\": true}"))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not a BUYER)"),
+            @ApiResponse(responseCode = "404", description = "Product not found")
+    })
+    @GetMapping("/user/has-purchased/{productId}")
+    @PreAuthorize("hasRole('BUYER')")
+    public ResponseEntity<Map<String, Boolean>> hasUserPurchasedProduct(@PathVariable Long productId) {
+        User authenticatedUser = getAuthenticatedUserFromSecurityContext();
+        boolean hasPurchased = orderService.checkIfUserHasPurchasedProduct(authenticatedUser.getId(), productId);
+        return ResponseEntity.ok(Map.of("hasPurchased", hasPurchased));
+    }
+
     @Operation(summary = "Create a new order (Buyer only)",
             description = "Allows a buyer to create a new order. The user ID in the request must match the authenticated user.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Order created successfully",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = OrderResponseDto.class))),
+            @ApiResponse(responseCode = "200", description = "Order created successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid input data"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden"),
@@ -106,8 +124,7 @@ public class OrderController {
             description = "Retrieves a list of all orders. Requires ADMIN privileges.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Successfully retrieved all orders",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, array = @ArraySchema(schema = @Schema(implementation = OrderResponseDto.class)))),
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved all orders"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden")
     })
@@ -118,13 +135,11 @@ public class OrderController {
         return ResponseEntity.ok(responseDtos);
     }
 
-    // --- METHOD 1: NEW ENDPOINT ADDED FOR BUYER DASHBOARD ---
     @Operation(summary = "Get orders for the authenticated buyer (Buyer only)",
             description = "Retrieves a paginated list of orders for the currently authenticated BUYER.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Successfully retrieved buyer's orders",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))),
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved buyer's orders"),
             @ApiResponse(responseCode = "400", description = "Invalid pagination/sort parameters"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a BUYER)")
@@ -141,8 +156,7 @@ public class OrderController {
             description = "Retrieves a paginated list of orders containing products sold by the currently authenticated SELLER. Supports sorting.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Successfully retrieved seller's orders",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Page<OrderResponseDto>
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved seller's orders"),
             @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not a SELLER)")
     })
@@ -153,13 +167,11 @@ public class OrderController {
         return ResponseEntity.ok(orders);
     }
 
-
     @Operation(summary = "Get a specific order by ID",
             description = "Retrieves details for a specific order. ADMINs can view any order. BUYERs can only view their own orders. SELLERs can only view orders containing their products.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Successfully retrieved order details",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = OrderResponseDto.class))),
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved order details"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden"),
             @ApiResponse(responseCode = "404", description = "Order not found")
@@ -193,27 +205,23 @@ public class OrderController {
         return ResponseEntity.ok(orderDto);
     }
 
-    // --- METHOD 2: FIXED THE COMPILATION ERROR ---
     @Operation(summary = "Get orders for a specific user (Admin or Buyer)",
             description = "Retrieves a paginated list of orders for a given user ID. ADMINs can view orders for any user. BUYERs can only view their own orders.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Successfully retrieved user's orders",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))), // Changed to Page
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved user's orders"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden"),
             @ApiResponse(responseCode = "404", description = "User not found")
     })
     @GetMapping("/user/{userId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUYER')")
-    // Changed signature to accept Pageable and return a Page
     public ResponseEntity<Page<OrderResponseDto>> getOrdersByUserId(@PathVariable String userId, Pageable pageable) {
         User authenticatedUser = getAuthenticatedUserFromSecurityContext();
         String userRole = authenticatedUser.getRole().toUpperCase();
         if ("BUYER".equals(userRole) && !authenticatedUser.getId().equals(userId)) {
             throw new AccessDeniedException("Buyers can only view their own list of orders.");
         }
-        // Call the service method with both arguments to fix the error
         Page<OrderResponseDto> responseDtos = orderService.getOrdersByUserId(userId, pageable);
         return ResponseEntity.ok(responseDtos);
     }
@@ -222,8 +230,7 @@ public class OrderController {
             description = "Allows an ADMIN to fully update an order's details. Sellers should use PATCH for status updates.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Order updated successfully",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = OrderResponseDto.class))),
+            @ApiResponse(responseCode = "200", description = "Order updated successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid input data"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden (User is not an Admin)"),
@@ -241,8 +248,7 @@ public class OrderController {
             description = "ADMIN can patch any field. SELLER can only patch 'status' of an order containing their product.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Order partially updated",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = OrderResponseDto.class))),
+            @ApiResponse(responseCode = "200", description = "Order partially updated"),
             @ApiResponse(responseCode = "400", description = "Invalid input data or field"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden"),
@@ -298,8 +304,7 @@ public class OrderController {
             description = "Converts items in the authenticated buyer's cart into orders.",
             security = @SecurityRequirement(name = "bearerAuth"))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Checkout successful, orders created",
-                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, array = @ArraySchema(schema = @Schema(implementation = OrderResponseDto.class)))),
+            @ApiResponse(responseCode = "200", description = "Checkout successful, orders created"),
             @ApiResponse(responseCode = "400", description = "Invalid input (e.g., cart empty)"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "403", description = "Forbidden"),

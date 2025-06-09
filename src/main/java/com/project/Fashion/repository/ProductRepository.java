@@ -8,8 +8,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
@@ -21,10 +19,6 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
      * @return A Page of products for the given seller.
      */
     Page<Product> findBySellerId(String sellerId, Pageable pageable);
-
-    // Keep other existing methods
-    @Query("SELECT DISTINCT p.category FROM Product p ORDER BY p.category ASC")
-    List<String> findDistinctCategories();
 
     @Query("SELECT MIN(p.price) FROM Product p")
     Float findMinPrice();
