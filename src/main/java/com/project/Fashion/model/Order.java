@@ -26,11 +26,12 @@ public class Order {
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
-    @JsonBackReference
+    @JsonBackReference("user-orders") // Use a unique name if multiple back refs of the same type exist
     private User user;
 
     @ManyToOne
     @JoinColumn(name = "product_id", nullable = false)
+    @JsonBackReference("product-orders")
     private Product product;
 
     @Column(nullable = false)
@@ -42,12 +43,12 @@ public class Order {
     @Column(nullable = false)
     private float total;
 
-    // --- ADD THIS STATUS FIELD ---
     @Enumerated(EnumType.STRING) // Store status as a string in the DB
     @Column(nullable = false)
     private OrderStatus status; // You'll need an OrderStatus enum
 
     @ManyToOne
     @JoinColumn(name = "delivery_id", nullable = false)
+    @JsonBackReference("delivery-orders")
     private Delivery delivery;
 }

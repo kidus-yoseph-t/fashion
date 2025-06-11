@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +24,6 @@ public class ContactMessageService {
 
     private static final String ADMIN_NEW_CONTACT_MESSAGE_TOPIC = "/topic/admin/newContactMessage";
 
-    // Use nullable annotation to indicate messagingTemplate might not be present in all environments (e.g., certain tests)
     @Autowired
     public ContactMessageService(ContactMessageRepository contactMessageRepository,
                                  Optional<SimpMessagingTemplate> messagingTemplate) {
@@ -36,40 +36,38 @@ public class ContactMessageService {
 
     @Transactional
     public ContactMessage saveMessageFromDto(ContactMessageRequestDto dto) {
-        // Map DTO to entity within the service
         ContactMessage message = new ContactMessage();
         message.setSenderName(dto.getSenderName());
         message.setSenderEmail(dto.getSenderEmail());
         message.setSubject(dto.getSubject());
         message.setMessage(dto.getMessage());
-        // createdAt and status are handled by the entity's defaults
 
-        // Save the message to the database first
         ContactMessage savedMessage = contactMessageRepository.save(message);
         logger.info("Contact message ID {} saved from sender: {}", savedMessage.getId(), savedMessage.getSenderEmail());
 
-        // --- REFACTORED: Defensive check for real-time notification ---
-        // Now, even if the messaging template fails, the message is still saved.
-        if (messagingTemplate != null) {
-            try {
-                logger.info("Sending new contact message notification to WebSocket topic: {}", ADMIN_NEW_CONTACT_MESSAGE_TOPIC);
-                messagingTemplate.convertAndSend(ADMIN_NEW_CONTACT_MESSAGE_TOPIC, savedMessage);
-            } catch (Exception e) {
-                // Log the error but don't fail the entire transaction
-                logger.error("Failed to send real-time contact message notification. The message was saved successfully, but the WebSocket push failed.", e);
-            }
-        }
+        // This method will now be executed in a separate thread and will not affect this transaction
+        sendAdminNotification(savedMessage);
 
         return savedMessage;
     }
 
+    @Async // Mark this method to run asynchronously
+    public void sendAdminNotification(ContactMessage savedMessage) {
+        if (messagingTemplate != null) {
+            try {
+                logger.info("Sending async new contact message notification to topic: {}", ADMIN_NEW_CONTACT_MESSAGE_TOPIC);
+                messagingTemplate.convertAndSend(ADMIN_NEW_CONTACT_MESSAGE_TOPIC, savedMessage);
+            } catch (Exception e) {
+                logger.error("Async notification failed for message ID {}. The message was saved successfully, but the WebSocket push failed.", savedMessage.getId(), e);
+            }
+        }
+    }
+
     public List<ContactMessage> getAllMessages() {
-        logger.debug("Fetching all contact messages for admin.");
         return contactMessageRepository.findAll();
     }
 
     public Optional<ContactMessage> getMessageById(Long id) {
-        logger.debug("Fetching contact message by ID: {}", id);
         return contactMessageRepository.findById(id);
     }
 
@@ -77,21 +75,15 @@ public class ContactMessageService {
     public void deleteMessage(Long id) {
         if (contactMessageRepository.existsById(id)) {
             contactMessageRepository.deleteById(id);
-            logger.info("Deleted contact message with ID: {}", id);
-        } else {
-            logger.warn("Attempted to delete non-existent contact message with ID: {}", id);
         }
     }
 
     @Transactional
     public ContactMessage updateMessageStatus(Long id, String newStatus) {
         ContactMessage message = contactMessageRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Message not found with id: " + id)); // Or a custom exception
+                .orElseThrow(() -> new RuntimeException("Message not found with id: " + id));
 
         message.setStatus(newStatus.toLowerCase());
-        ContactMessage updatedMessage = contactMessageRepository.save(message);
-        logger.info("Updated status of contact message ID {} to '{}'", id, newStatus);
-
-        return updatedMessage;
+        return contactMessageRepository.save(message);
     }
 }

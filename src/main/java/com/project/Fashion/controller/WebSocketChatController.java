@@ -1,5 +1,7 @@
 package com.project.Fashion.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.project.Fashion.dto.ChatMessageDto;
 import com.project.Fashion.dto.MessageDto;
 import com.project.Fashion.model.User;
@@ -9,16 +11,13 @@ import com.project.Fashion.exception.exceptions.UserNotFoundException;
 import com.project.Fashion.exception.exceptions.MessageSendException;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.handler.annotation.SendTo;
-import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 
@@ -32,43 +31,69 @@ public class WebSocketChatController {
 
     private final ChatService chatService;
     private final UserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    // Use a Jackson ObjectMapper to manually deserialize later
+    private final ObjectMapper objectMapper;
 
     @Autowired
-    public WebSocketChatController(ChatService chatService, UserRepository userRepository) {
+    public WebSocketChatController(ChatService chatService,
+                                   UserRepository userRepository,
+                                   SimpMessagingTemplate messagingTemplate) {
         this.chatService = chatService;
         this.userRepository = userRepository;
+        this.messagingTemplate = messagingTemplate;
+
+        // Initialize ObjectMapper
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
-    @Operation(summary = "Handle incoming chat messages via WebSocket",
-            description = "Receives a chat message sent to '/app/chat.sendMessage' and broadcasts the persisted message to '/topic/messages'."
-    )
     @MessageMapping("/chat.sendMessage")
-    @SendTo("/topic/messages")
-    public MessageDto handleMessage(@Payload ChatMessageDto incomingChatMessage, Principal principal) {
-        if (principal == null || principal.getName() == null) {
-            throw new MessageSendException("Cannot send message: User is not authenticated in WebSocket session.");
+    public void handleMessage(@Payload String rawPayload, Principal principal) {
+        // --- DIAGNOSTIC LOG ---
+        logger.info("DIAGNOSTIC: Received raw payload in handleMessage: {}", rawPayload);
+
+        try {
+            if (principal == null || principal.getName() == null) {
+                throw new MessageSendException("Cannot send message: User is not authenticated in WebSocket session.");
+            }
+
+            // Manually deserialize the payload
+            ChatMessageDto incomingChatMessage = objectMapper.readValue(rawPayload, ChatMessageDto.class);
+
+            String authenticatedUserEmail = principal.getName();
+            User authenticatedUser = userRepository.findByEmail(authenticatedUserEmail)
+                    .orElseThrow(() -> new UserNotFoundException("Authenticated user not found: " + authenticatedUserEmail));
+
+            String authenticatedUserId = authenticatedUser.getId();
+
+            if (!authenticatedUserId.equals(incomingChatMessage.getSenderId())) {
+                logger.warn("Security Alert: Mismatched sender ID. Authenticated: {}, Payload: {}.",
+                        authenticatedUserId, incomingChatMessage.getSenderId());
+                throw new MessageSendException("Sender ID in message does not match authenticated user.");
+            }
+
+            MessageDto persistedMessageDto = chatService.sendMessage(
+                    incomingChatMessage.getConversationId(),
+                    authenticatedUserId,
+                    incomingChatMessage.getContent()
+            );
+
+            String destination = "/topic/conversation/" + persistedMessageDto.getConversationId();
+
+            logger.info("Sending message ID {} to destination: {}", persistedMessageDto.getId(), destination);
+
+            messagingTemplate.convertAndSend(destination, persistedMessageDto);
+
+        } catch (Exception e) {
+            logger.error("Error processing WebSocket message payload.", e);
+            // Optionally, send an error back to the user
+            if (principal != null) {
+                messagingTemplate.convertAndSendToUser(principal.getName(), "/queue/errors",
+                        Map.of("error", "Failed to process your message: " + e.getMessage()));
+            }
         }
-
-        String authenticatedUserEmail = principal.getName();
-        User authenticatedUser = userRepository.findByEmail(authenticatedUserEmail)
-                .orElseThrow(() -> new UserNotFoundException("Authenticated user not found: " + authenticatedUserEmail));
-
-        String authenticatedUserId = authenticatedUser.getId();
-
-        if (!authenticatedUserId.equals(incomingChatMessage.getSenderId())) {
-            logger.warn("Security Alert: Mismatched sender ID. Authenticated: {}, Payload: {}.",
-                    authenticatedUserId, incomingChatMessage.getSenderId());
-            throw new MessageSendException("Sender ID in message does not match authenticated user.");
-        }
-
-        MessageDto persistedMessageDto = chatService.sendMessage(
-                incomingChatMessage.getConversationId(),
-                authenticatedUserId,
-                incomingChatMessage.getContent()
-        );
-
-        logger.info("Broadcasting message ID {} for conversationId: {}", persistedMessageDto.getId(), persistedMessageDto.getConversationId());
-        return persistedMessageDto;
     }
 
     @MessageExceptionHandler

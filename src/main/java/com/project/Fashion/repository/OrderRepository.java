@@ -22,7 +22,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     );
 
     Page<Order> findByProduct_Seller_Id(String sellerId, Pageable pageable);
-    
+
     /**
      * Efficiently checks if a user has at least one order for a specific product
      * with a qualifying status (e.g., PAID, COMPLETED, SHIPPED).
@@ -32,4 +32,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * @return true if a matching order exists, false otherwise.
      */
     boolean existsByUser_IdAndProduct_IdAndStatusIn(String userId, Long productId, List<OrderStatus> statuses);
+
+    /**
+     * Finds all orders for a seller's products that match one of the given statuses.
+     * @param sellerId The ID of the seller.
+     * @param statuses A list of order statuses to filter by.
+     * @return A list of matching orders.
+     */
+    List<Order> findByProduct_Seller_IdAndStatusIn(String sellerId, List<OrderStatus> statuses);
 }

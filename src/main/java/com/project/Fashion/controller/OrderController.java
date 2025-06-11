@@ -167,6 +167,21 @@ public class OrderController {
         return ResponseEntity.ok(orders);
     }
 
+    @Operation(summary = "Get sales statistics for the authenticated seller",
+            description = "Retrieves total sales figures for the currently authenticated SELLER based on paid orders.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successfully retrieved sales stats"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized (Token missing or invalid)"),
+            @ApiResponse(responseCode = "403", description = "Forbidden (User is not a SELLER)")
+    })
+    @GetMapping("/seller/me/stats")
+    @PreAuthorize("hasRole('SELLER')")
+    public ResponseEntity<Map<String, Double>> getMySalesStats() {
+        double totalSales = orderService.getTotalSalesForAuthenticatedSeller();
+        return ResponseEntity.ok(Map.of("totalSales", totalSales));
+    }
+
     @Operation(summary = "Get a specific order by ID",
             description = "Retrieves details for a specific order. ADMINs can view any order. BUYERs can only view their own orders. SELLERs can only view orders containing their products.",
             security = @SecurityRequirement(name = "bearerAuth"))

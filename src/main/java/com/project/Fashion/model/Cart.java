@@ -21,12 +21,12 @@ public class Cart {
 
     @ManyToOne
     @JoinColumn(name = "user_id")
-    @JsonBackReference
+    @JsonBackReference("user-cart")
     private User user;
 
     @ManyToOne
     @JoinColumn(name = "product_id")
-    @JsonBackReference
+    @JsonBackReference("product-carts")
     private Product product;
 
     @Column(nullable = false)

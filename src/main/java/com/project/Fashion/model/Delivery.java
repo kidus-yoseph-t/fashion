@@ -1,5 +1,7 @@
 package com.project.Fashion.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -27,5 +29,6 @@ public class Delivery {
     private Integer maxDeliveryDays;
 
     @OneToMany(mappedBy = "delivery")
+    @JsonIgnore
     private List<Order> orders;
 }

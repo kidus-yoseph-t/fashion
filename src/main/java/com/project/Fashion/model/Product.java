@@ -48,12 +48,14 @@ public class Product {
     private int numOfReviews;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
+    @JsonManagedReference("product-reviews")
     private List<Review> reviews;
 
-    @OneToMany(mappedBy = "product")    // No cascade
+    @OneToMany(mappedBy = "product")
+    @JsonManagedReference("product-orders")
     private List<Order> orders;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
+    @JsonManagedReference("product-carts")
     private List<Cart> carts;
 }
-

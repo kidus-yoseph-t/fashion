@@ -49,12 +49,26 @@ public class OrderService {
     private final DeliveryRepository deliveryRepository;
 
     // Define qualifying statuses for what counts as a "purchase" for reviews
-    private static final List<OrderStatus> PURCHASED_STATUSES = Arrays.asList(
+    private static final List<OrderStatus> PAID_STATUSES = Arrays.asList(
             OrderStatus.PAID,
             OrderStatus.PROCESSING,
             OrderStatus.SHIPPED,
             OrderStatus.COMPLETED
     );
+
+    @Transactional(readOnly = true)
+    public double getTotalSalesForAuthenticatedSeller() {
+        User authenticatedSeller = getCurrentAuthenticatedUser();
+        if (!"SELLER".equalsIgnoreCase(authenticatedSeller.getRole())) {
+            throw new AccessDeniedException("Only users with SELLER role can access sales data.");
+        }
+
+        List<Order> paidOrders = orderRepository.findByProduct_Seller_IdAndStatusIn(authenticatedSeller.getId(), PAID_STATUSES);
+
+        return paidOrders.stream()
+                .mapToDouble(Order::getTotal)
+                .sum();
+    }
 
     private User getCurrentAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -103,7 +117,7 @@ public class OrderService {
      */
     @Transactional(readOnly = true)
     public boolean checkIfUserHasPurchasedProduct(String userId, Long productId) {
-        return orderRepository.existsByUser_IdAndProduct_IdAndStatusIn(userId, productId, PURCHASED_STATUSES);
+        return orderRepository.existsByUser_IdAndProduct_IdAndStatusIn(userId, productId, PAID_STATUSES);
     }
 
     @Transactional(readOnly = true)

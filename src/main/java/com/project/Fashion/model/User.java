@@ -1,5 +1,6 @@
 package com.project.Fashion.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
@@ -37,20 +38,23 @@ public class User {
     private String role;
 
     @OneToMany(mappedBy = "user")   // No cascade
-    @JsonManagedReference
+    @JsonManagedReference("user-orders")
     private List<Order> orders;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    @JsonManagedReference("user-reviews")
     private List<Review> reviews;
 
     @OneToMany(mappedBy = "sender", cascade = CascadeType.ALL)
+    @JsonIgnore
     private List<Message> messages;
 
     @OneToMany(mappedBy = "user1")
+    @JsonIgnore
     private List<Conversation> conversationsStarted;
 
     @OneToMany(mappedBy = "user2")
+    @JsonIgnore
     private List<Conversation> conversationsReceived;
 
 }
-
