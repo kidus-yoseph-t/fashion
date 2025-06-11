@@ -273,7 +273,7 @@ public class ProductService {
                     (StringUtils.hasText(originalFilename) ? StringUtils.cleanPath(originalFilename).replaceAll("\\s+", "_") : "image.png");
             Path filePath = uploadPath.resolve(filename);
             Files.copy(file.getInputStream(), filePath, REPLACE_EXISTING);
-            String fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath().path("/api/products/image/").path(filename).toUriString();
+            String fileUrl = "/api/products/image/" + filename;
             product.setPhotoUrl(fileUrl);
             Product savedProduct = productRepository.save(product);
             log.info("Image for product {} added by {}. Caches evicted.", savedProduct.getId(), authSeller.getEmail());

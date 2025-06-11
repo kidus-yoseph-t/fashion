@@ -13,6 +13,8 @@ public interface ProductMapper {
 
     // Maps a Product entity to the detailed response DTO
     @Mapping(source = "seller.id", target = "sellerId")
+    @Mapping(expression = "java(product.getSeller().getFirstName() + \" \" + product.getSeller().getLastName())", target = "sellerName")
+    @Mapping(source = "seller.email", target = "sellerEmail")
     ProductResponseDto toProductResponseDto(Product product);
 
     // Maps the creation DTO to a new Product entity

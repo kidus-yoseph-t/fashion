@@ -32,6 +32,12 @@ public class ProductResponseDto {
     @Schema(description = "The ID of the seller who owns the product.", example = "a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8")
     private String sellerId;
 
+    @Schema(description = "The full name of the seller.", example = "Alice Seller")
+    private String sellerName;
+
+    @Schema(description = "The email of the seller.", example = "alice@sellershop.com")
+    private String sellerEmail;
+
     @Schema(description = "The average rating of the product.", example = "4.5")
     private float averageRating;
 
