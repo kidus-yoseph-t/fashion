@@ -83,9 +83,10 @@ public class ProductController {
             @Parameter(description = "Minimum price filter", example = "100.00") @RequestParam(required = false) Float minPrice,
             @Parameter(description = "Maximum price filter", example = "1000.00") @RequestParam(required = false) Float maxPrice,
             @Parameter(description = "Minimum average rating filter (1-5)", example = "4.0") @RequestParam(required = false) Float minRating,
+            @Parameter(description = "Filter for products with no reviews", example = "true") @RequestParam(required = false) Boolean noReviews,
             @Parameter(description = "Field to sort by (name, price, averageRating, id)", example = "price") @RequestParam(required = false, defaultValue = "name") String sortBy,
             @Parameter(description = "Sort direction (ASC or DESC)", example = "DESC") @RequestParam(required = false, defaultValue = "ASC") String sortDir) {
-        Page<ProductResponseDto> productPage = productService.getAllProducts(page, size, category, searchTerm, minPrice, maxPrice, minRating, sortBy, sortDir);
+        Page<ProductResponseDto> productPage = productService.getAllProducts(page, size, category, searchTerm, minPrice, maxPrice, minRating, noReviews, sortBy, sortDir);
         return ResponseEntity.ok(productPage);
     }
 

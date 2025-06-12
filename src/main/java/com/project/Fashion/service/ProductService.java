@@ -100,13 +100,15 @@ public class ProductService {
         }
     }
 
-    @Cacheable(value = "productsList", key = "{#page, #size, #category, #searchTerm, #minPrice, #maxPrice, #minRating, #sortBy, #sortDir}")
+    @Cacheable(value = "productsList", key = "{#page, #size, #category, #searchTerm, #minPrice, #maxPrice, #minRating, #noReviews, #sortBy, #sortDir}")
     @Transactional(readOnly = true)
     public Page<ProductResponseDto> getAllProducts(
             int page, int size, String category, String searchTerm,
-            Float minPrice, Float maxPrice, Float minRating, String sortBy, String sortDir) {
-        log.info("Fetching products from DB: page={}, size={}, category={}, searchTerm={}, minPrice={}, maxPrice={}, minRating={}, sortBy={}, sortDir={}",
-                page, size, category, searchTerm, minPrice, maxPrice, minRating, sortBy, sortDir);
+            Float minPrice, Float maxPrice, Float minRating,
+            Boolean noReviews,
+            String sortBy, String sortDir) {
+        log.info("Fetching products from DB: page={}, size={}, category={}, searchTerm={}, minPrice={}, maxPrice={}, minRating={}, sortBy={}, sortDir={}, noReviews={}",
+                page, size, category, searchTerm, minPrice, maxPrice, minRating, sortBy, sortDir, noReviews);
         Sort.Direction direction = Sort.Direction.ASC;
         if (sortDir != null && sortDir.equalsIgnoreCase("DESC")) {
             direction = Sort.Direction.DESC;
@@ -132,7 +134,14 @@ public class ProductService {
 
             if (minPrice != null) predicates.add(cb.greaterThanOrEqualTo(root.get("price"), minPrice));
             if (maxPrice != null) predicates.add(cb.lessThanOrEqualTo(root.get("price"), maxPrice));
-            if (minRating != null && minRating > 0) predicates.add(cb.greaterThanOrEqualTo(root.get("averageRating"), minRating));
+            //if (minRating != null && minRating > 0) predicates.add(cb.greaterThanOrEqualTo(root.get("averageRating"), minRating));
+            if (noReviews != null && noReviews) {
+                // If noReviews is true, find products where numOfReviews is 0
+                predicates.add(cb.equal(root.get("numOfReviews"), 0));
+            } else if (minRating != null && minRating > 0) {
+                // Otherwise, if a minRating is provided, use it
+                predicates.add(cb.greaterThanOrEqualTo(root.get("averageRating"), minRating));
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         Page<Product> productPage = productRepository.findAll(spec, pageable);
